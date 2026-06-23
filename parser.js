@@ -309,7 +309,7 @@ function parseRoster(text, filePath = '') {
   debug.push(`Año detectado: ${baseYear}`);
   debug.push(`Mes inicial detectado: ${currentMonth + 1}`);
   debug.push(`Tripulaciones detectadas: ${Object.keys(crewMap).length}`);
-  debug.push('Parser: hybrid-row v3.1 Apple-first');
+  debug.push('Parser: mixed date-line v3.2 Apple fixed');
 
   let scheduleText = text;
   for (const marker of ['Tripulación del vuelo', 'Day Notes', 'Activity Notes', 'Descripción']) {
@@ -326,7 +326,7 @@ function parseRoster(text, filePath = '') {
 
   const DOW = '(MON|TUE|WED|THU|FRI|SAT|SUN)';
   const dayOnlyRe = new RegExp(`^(\\d{2})\\s*${DOW}\\s*$`);
-  const dayStartRe = new RegExp(`^(\\d{2})\\s*${DOW}\\b\\s*(.*)$`);
+  const dayWithRestRe = new RegExp(`^(\\d{2})\\s*${DOW}\\s+(.+)$`);
   const timeRe = /^\d{2}:\d{2}$/;
   const airportRe = /^[A-Z]{3}$/;
   const acRe = /^[A-Z]\d{2,3}$/;
@@ -335,7 +335,7 @@ function parseRoster(text, filePath = '') {
   let lastDaySeen = null;
   let currentDate = null;
   let currentDuty = null;
-  let pendingBeforeDate = null;
+  let heldLine = null;
 
   function dateState(day) {
     if (lastDaySeen !== null && day < lastDaySeen) {
@@ -550,38 +550,46 @@ function parseRoster(text, filePath = '') {
     }
   }
 
-  for (let i = 0; i < lines.length; i++) {
-    const raw = lines[i];
-    const dsm = raw.match(dayStartRe);
-
-    if (dsm) {
-      flushDuty();
-      currentDate = dateState(Number(dsm[1]));
-      const rest = (dsm[3] || '').trim();
-      if (pendingBeforeDate) {
-        processLineForCurrentDate(pendingBeforeDate);
-        pendingBeforeDate = null;
+  for (const raw of lines) {
+    const dmFull = raw.match(dayWithRestRe);
+    if (dmFull) {
+      // Normal roster extraction: date and first activity/flight are on the same line.
+      // IMPORTANT: do not apply delayed-line logic here, otherwise the first item of
+      // the day can be assigned to the previous day.
+      if (heldLine && currentDate) {
+        processLineForCurrentDate(heldLine);
+        heldLine = null;
       }
-      if (rest) processLineForCurrentDate(rest);
+      flushDuty();
+      currentDate = dateState(Number(dmFull[1]));
+      processLineForCurrentDate(dmFull[3]);
       continue;
     }
 
-    const next = lines[i + 1] || '';
-    const nextIsDayOnly = dayOnlyRe.test(next);
-    const looksLikeRosterRow = /^(OP\s+)?AR\s*\d{3,4}\b/i.test(raw) || activityRe.test((raw.split(/\s+/)[0] || ''));
+    const dm = raw.match(dayOnlyRe);
 
-    if (nextIsDayOnly && looksLikeRosterRow) {
-      // Some PDF.js extractions put the first row of a day just BEFORE its date marker.
-      pendingBeforeDate = raw;
+    if (dm) {
+      // Alternate PDF.js layout: the first row of the day can appear immediately
+      // BEFORE a standalone date marker. In that case, the held line belongs to
+      // the newly detected date.
+      flushDuty();
+      currentDate = dateState(Number(dm[1]));
+      if (heldLine) {
+        processLineForCurrentDate(heldLine);
+        heldLine = null;
+      }
       continue;
     }
 
-    processLineForCurrentDate(raw);
+    // Delay every normal line by one, because the next standalone date marker may belong to it.
+    if (heldLine && currentDate) {
+      processLineForCurrentDate(heldLine);
+    }
+    heldLine = raw;
   }
 
-  if (pendingBeforeDate && currentDate) {
-    processLineForCurrentDate(pendingBeforeDate);
-    pendingBeforeDate = null;
+  if (heldLine && currentDate) {
+    processLineForCurrentDate(heldLine);
   }
   flushDuty();
 
