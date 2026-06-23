@@ -1,3 +1,1 @@
-Roster Calendar Pro Web v7.3
-
-Apple Calendar line-based authoritative parser.
+Roster Calendar Pro Web v8.0 - fresh line-aware parser for Apple Calendar
