@@ -47,10 +47,9 @@ En iPhone/Android usa Web Share API cuando está disponible. Si no, abre/descarg
 Agrega ícono propio y manifest para iPhone/Android.
 
 
-## v2.4 clean
+## v2.5 Apple restore
 
-Base limpia desde v2.1 PWA.
-- Apple/iPhone usa buildICS original.
-- Android usa buildICSAndroid con TZ America/Argentina/Buenos_Aires.
-- Parser crew más tolerante.
-- Botón Procesar PDF verificado.
+- Base restaurada desde v2.1 PWA, que funcionaba bien en Apple.
+- No modifica el generador ICS original.
+- Corrige parser de tripulación.
+- Android desactivado temporalmente para evitar fechas corridas.

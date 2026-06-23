@@ -94,11 +94,6 @@ function parseCrew(text) {
   const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
 
   for (const line of lines) {
-    // Supports web/PDF.js variants:
-    // 08JUL.26 AR1904 ...
-    // 08JUL26 AR1904 ...
-    // 08 JUL.26 AR1904 ...
-    // 08 JUL 26 AR1904 ...
     const m = line.match(/^(\d{2})\s*([A-Z]{3})\.?\s*(\d{2})\s+(AR\s*\d{3,4})\s+(.+)$/i);
     if (!m) continue;
 
@@ -116,12 +111,9 @@ function parseCrew(text) {
 
 function getCrew(crewMap, dateKey, flight) {
   const normalizedFlight = String(flight || '').replace(/\s+/g, '').toUpperCase();
-  const k = String(dateKey || '').replace(/\./g, '').replace(/\s+/g, '').toUpperCase();
+  const normalizedDateKey = String(dateKey || '').replace(/\./g, '').replace(/\s+/g, '').toUpperCase();
 
-  return (
-    crewMap[`${k}-${normalizedFlight}`] ||
-    ''
-  );
+  return crewMap[`${normalizedDateKey}-${normalizedFlight}`] || '';
 }
 
 
