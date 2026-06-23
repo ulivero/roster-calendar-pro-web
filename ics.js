@@ -49,13 +49,13 @@ function stableEventUid(ev) {
 
   // Flights: stable by date + flight number + route.
   const flightMatch = title.match(/\b(AR\d{3,4})\b/);
-  const routeMatch = title.match(/([A-Z]{3})\s*-\s*([A-Z]{3})/);
+  const routeMatch = title.match(/([A-Z]{3})\s*(?:-|→)\s*([A-Z]{3})/);
   if (flightMatch && routeMatch) {
     return `${date}-${flightMatch[1]}-${routeMatch[1]}-${routeMatch[2]}@rostercalendarpro.local`;
   }
 
-  // Report/debrief: stable by date + dutyId.
-  if (ev.type === 'report' || ev.type === 'debrief') {
+  // Report / last landing: stable by date + dutyId.
+  if (ev.type === 'report' || ev.type === 'lastLanding' || ev.type === 'debrief') {
     return `${date}-${safeUid(ev.type)}-${safeUid(ev.dutyId || ev.id)}@rostercalendarpro.local`;
   }
 
@@ -90,7 +90,7 @@ function buildICS(events) {
 
   for (const ev of events) {
     const uid = stableEventUid(ev);
-    const sequence = 630000;
+    const sequence = 830000;
 
     lines.push('BEGIN:VEVENT');
     lines.push(`UID:${uid}`);

@@ -341,8 +341,7 @@ function parseRoster(text, filePath = '') {
   }
 
   function flightTitle(leg) {
-    const hhmm = (leg.std || '').replace(':', '');
-    return `✈️ ${leg.orig} - ${leg.dest} ${leg.flight} (${hhmm}L)`;
+    return `✈️ ${leg.flight} ${leg.orig}→${leg.dest} 🛫${leg.std} 🛬${leg.sta}`;
   }
 
   function flushDuty() {
@@ -363,11 +362,12 @@ function parseRoster(text, filePath = '') {
         return c ? `${l.flight}: ${c}` : `${l.flight}: tripulación no informada`;
       });
 
+      const lastLanding = last.sta;
       const dutyInfo = [
         `Duty: AR${compactFlights(current.legs)}`,
         `Ruta: ${dutyRoute}`,
-        `Check-in / Report: ${ci}`,
-        `Check-out / Debrief: ${co}`,
+        `Report: ${ci}`,
+        `Last landing: ${lastLanding}`,
         `Avión: ${first.aircraft || 'E190'}`,
         '',
         'Tramos:',
@@ -381,7 +381,7 @@ function parseRoster(text, filePath = '') {
         id: `${dutyId}-report`,
         type: 'report',
         dutyId,
-        title: `🕐 REPORT`,
+        title: `🕘 REPORT ${ci}`,
         start: dutyStart,
         end: fullDateTime(dateStr, first.std),
         dutyStart,
@@ -419,6 +419,19 @@ function parseRoster(text, filePath = '') {
           ].join('\n')
         });
       }
+
+      events.push({
+        id: `${dutyId}-last-landing`,
+        type: 'lastLanding',
+        dutyId,
+        title: `🛬 LAST LANDING ${last.sta}`,
+        start: fullDateTime(dateStr, last.sta, timeToMinutes(last.std)),
+        end: addMinutesIso(fullDateTime(dateStr, last.sta, timeToMinutes(last.std)), 5),
+        dutyStart,
+        dutyEnd,
+        location: last.dest,
+        description: dutyInfo.join('\n')
+      });
     }
     current = null;
   }
