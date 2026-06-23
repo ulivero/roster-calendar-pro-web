@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Roster Calendar Pro Web</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="hero">
+    <div class="brand">
+      <div class="logo">EMBRAER <span>E190</span></div>
+      <div>
+        <h1>Roster Calendar Pro Web</h1>
+        <p>PDF PortalAR → ICS para Apple Calendar · v2 web mobile · iPhone/Android · basada en v6.6</p>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>1) Elegir PDF del roster</h2>
+      <input id="pdfFile" type="file" accept="application/pdf,.pdf" />
+      <div class="actions">
+        <button id="processBtn">Procesar PDF</button>
+        <button id="addAppleBtn" disabled>📅 Agregar a Apple Calendar</button>
+        <button id="addAndroidBtn" disabled>📅 Android / Google Calendar</button>
+        <button id="downloadBtn" disabled>Descargar ICS</button>
+        <button id="debugBtn" disabled>Mostrar debug</button>
+      </div>
+      <p class="hint">El PDF se procesa en tu navegador. No se sube a ningún servidor.</p>
+    </section>
+
+    <section class="grid">
+      <section class="card">
+        <h2>Eventos detectados</h2>
+        <div id="summary" class="summary">Resumen: -</div>
+        <div id="status" class="status">Esperando PDF...</div>
+        <div id="events"></div>
+      </section>
+
+      <aside class="card">
+        <h2>Reglas v6.6</h2>
+        <ul>
+          <li>REPORT = STD primer tramo - 1 h → STD.</li>
+          <li>Sin eventos DEBRIEF.</li>
+          <li>WX rápido con links METAR/TAF.</li>
+          <li>VAC, CRM, ESM, GUA, OFF.</li>
+          <li>Un solo ICS con UID estable.</li>
+        </ul>
+      </aside>
+    </section>
+
+    <section id="debug" class="card hidden">
+      <h2>Debug</h2>
+      <pre id="debugText"></pre>
+    </section>
+  </main>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script>
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+  </script>
+  <script src="parser.js"></script>
+  <script src="ics.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
