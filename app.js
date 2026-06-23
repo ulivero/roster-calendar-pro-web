@@ -166,7 +166,7 @@ $('addAppleBtn').addEventListener('click', () => {
 });
 
 $('addAndroidBtn').addEventListener('click', () => {
-  alert('Android desactivado por ahora. Primero dejamos Apple 100% estable.');
+  openICSForCalendar('roster-google-calendar.ics');
 });
 
 

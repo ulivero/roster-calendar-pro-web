@@ -88,31 +88,21 @@ function cleanCrew(s) {
     .trim();
 }
 
-
-
 function parseCrew(text) {
   const crew = {};
   const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-
   for (const line of lines) {
-    const m = line.match(/^(\d{2})\s*([A-Z]{3})\.?\s*(\d{2})\s+(AR\s*\d{3,4})\s+(.+)$/i);
+    const m = line.match(/^(\d{2})([A-Z]{3})\.?([0-9]{2})\s+(AR\d+)\s+(.+)$/);
     if (!m) continue;
-    const day = m[1].padStart(2, '0');
-    const mon = m[2].toUpperCase();
-    const yy = m[3];
-    const flight = m[4].replace(/\s+/g, '').toUpperCase();
-    crew[`${day}${mon}${yy}-${flight}`] = cleanCrew(m[5]);
+    const key = `${m[1]}${m[2]}${m[3]}-${m[4]}`;
+    crew[key] = cleanCrew(m[5]);
   }
-
   return crew;
 }
 
 function getCrew(crewMap, dateKey, flight) {
-  const normalizedFlight = String(flight || '').replace(/\s+/g, '').toUpperCase();
-  const normalizedDateKey = String(dateKey || '').replace(/\./g, '').replace(/\s+/g, '').toUpperCase();
-  return crewMap[`${normalizedDateKey}-${normalizedFlight}`] || '';
+  return crewMap[`${dateKey}-${flight}`] || '';
 }
-
 
 function classifyActivity(code) {
   const map = {
@@ -297,8 +287,6 @@ function wxBlock(orig, dest) {
   return lines.join('\n').trim();
 }
 
-
-
 function parseRoster(text, filePath = '') {
   const debug = [];
   const events = [];
@@ -311,56 +299,45 @@ function parseRoster(text, filePath = '') {
   debug.push(`Año detectado: ${baseYear}`);
   debug.push(`Mes inicial detectado: ${currentMonth + 1}`);
   debug.push(`Tripulaciones detectadas: ${Object.keys(crewMap).length}`);
-  debug.push('Parser: pending-lines v2.9');
 
-  let scheduleText = text;
+  // IMPORTANTE: el PDF trae al final tripulaciones y leyendas de códigos.
+  // Si las parseamos como si fueran programación, aparecen eventos falsos
+  // en el último día leído (por ejemplo 30 TUE con GUA/MED/GAB/etc.).
+  // Por eso usamos el texto completo para tripulaciones, pero para eventos
+  // cortamos antes de esa sección.
   const cutMarkers = ['Tripulación del vuelo', 'Day Notes', 'Activity Notes', 'Descripción'];
+  let scheduleText = text;
   for (const marker of cutMarkers) {
     const idx = scheduleText.indexOf(marker);
     if (idx !== -1) scheduleText = scheduleText.slice(0, idx);
   }
 
-  const lines = scheduleText
-    .split(/\r?\n/)
-    .map(l => l.replace(/\s+/g, ' ').trim())
-    .filter(Boolean);
+  const normalized = normalizeRosterText(scheduleText);
+  const lines = normalized.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
 
-  debug.push('Muestra líneas: ' + lines.slice(0, 35).join(' | '));
-
-  const DOW = '(MON|TUE|WED|THU|FRI|SAT|SUN)';
-  const dayOnlyRe = new RegExp(`^(\\d{2})\\s*${DOW}\\s*$`);
-  const timeRe = /^\d{2}:\d{2}$/;
-  const airportRe = /^[A-Z]{3}$/;
-  const acRe = /^[A-Z]\d{2,3}$/;
-  const activityRe = /^(A\/T|D\/L|GUA|GAB|MED|NPR|RAC|VAC|CRM|ESM|\*)$/;
-
+  let currentDay = null;
+  let currentDow = '';
+  let currentDateStr = '';
+  let currentDateKey = '';
   let lastDaySeen = null;
-  let currentDate = null;
-  let currentDuty = null;
-  let pending = [];
+  let current = null;
 
-  function dateState(day) {
+  function setCurrentDay(day, dow) {
     if (lastDaySeen !== null && day < lastDaySeen) {
       currentMonth += 1;
       if (currentMonth > 11) { currentMonth = 0; currentYear += 1; }
     }
     lastDaySeen = day;
-    return {
-      day,
-      dateStr: dateFor(day, currentMonth, currentYear),
-      dateKey: `${pad2(day)}${MONTH_NAMES[currentMonth]}${String(currentYear).slice(2)}`
-    };
+    currentDay = day;
+    currentDow = dow;
+    currentDateStr = dateFor(day, currentMonth, currentYear);
+    currentDateKey = `${pad2(day)}${MONTH_NAMES[currentMonth]}${String(currentYear).slice(2)}`;
   }
 
-  function compactFlightsLocal(legs) {
-    return legs.map(l => l.flight.replace('AR', '')).join('/');
-  }
-
-  function routeTextLocal(legs) {
-    if (!legs.length) return '';
-    const parts = [legs[0].orig];
-    for (const leg of legs) parts.push(leg.dest);
-    return parts.join(' - ');
+  function addMinutesIso(iso, mins) {
+    const d = new Date(iso);
+    d.setMinutes(d.getMinutes() + mins);
+    return d.toISOString().slice(0, 19);
   }
 
   function flightTitle(leg) {
@@ -368,218 +345,167 @@ function parseRoster(text, filePath = '') {
     return `✈️ ${leg.orig} - ${leg.dest} ${leg.flight} (${hhmm}L)`;
   }
 
-  function parseFlight(rest) {
-    let s = rest.replace(/^OP\s+/i, '').trim().replace(/^(AR)\s+(\d{3,4})/i, 'AR$2');
-    const t = s.split(/\s+/).filter(Boolean);
-    if (!t.length || !/^AR\d{3,4}$/i.test(t[0])) return null;
-
-    let idx = 1;
-    const flight = t[0].toUpperCase();
-    let ci = null;
-
-    // First leg may have C/I after flight number:
-    // AR1724 06:00 AEP 06:58 SFN 08:04 E90
-    if (timeRe.test(t[idx]) && airportRe.test(t[idx + 1]) && timeRe.test(t[idx + 2])) {
-      ci = t[idx];
-      idx += 1;
-    }
-
-    if (!airportRe.test(t[idx])) return null;
-    const orig = t[idx++];
-
-    if (!timeRe.test(t[idx])) return null;
-    const std = t[idx++];
-
-    if (!airportRe.test(t[idx])) return null;
-    const dest = t[idx++];
-
-    if (!timeRe.test(t[idx])) return null;
-    const sta = t[idx++];
-
-    let co = null;
-    if (timeRe.test(t[idx])) co = t[idx++];
-
-    let aircraft = 'E190';
-    if (acRe.test(t[idx])) {
-      aircraft = t[idx] === 'E90' ? 'E190' : t[idx];
-    }
-
-    return { flight, ci, orig, std, dest, sta, co, aircraft };
-  }
-
-  function parseActivity(rest) {
-    const t = rest.split(/\s+/).filter(Boolean);
-    if (!t.length || !activityRe.test(t[0])) return null;
-    return { code: t[0], fields: t.slice(1), original: rest };
-  }
-
-  function addActivity(code, fields, original) {
-    if (!currentDate) return;
-    const cls = classifyActivity(code);
-    const times = fields.filter(x => timeRe.test(x));
-    const airports = fields.filter(x => airportRe.test(x));
-    let start = times[0] || '00:00';
-    let end = times[times.length - 1] || '23:59';
-
-    const startMinutes = timeToMinutes(start === '24:00' ? '00:00' : start);
-
-    events.push({
-      id: `${currentDate.dateStr}-${code.replace(/\W/g, '') || 'OFF'}-${cls.title}`,
-      type: cls.type,
-      title: `${activityIcon(cls.type)} ${cls.title}`,
-      start: fullDateTime(currentDate.dateStr, start),
-      end: fullDateTime(currentDate.dateStr, end, startMinutes),
-      location: airports[0] || '',
-      description: `Actividad: ${cls.title}\nCódigo: ${code}\nLínea original: ${original || (code + ' ' + fields.join(' '))}`
-    });
-  }
-
   function flushDuty() {
-    if (!currentDuty || !currentDuty.legs.length) {
-      currentDuty = null;
-      return;
-    }
+    if (!current) return;
+    if (current.kind === 'flight' && current.legs.length) {
+      const first = current.legs[0];
+      const last = current.legs[current.legs.length - 1];
+      const dateStr = current.dateStr;
+      const ci = current.checkIn || subtractOneHour(first.std);
+      const co = current.checkOut || last.co || last.sta;
+      const startMinutes = timeToMinutes(ci);
+      const dutyId = `${dateStr}-duty-${compactFlights(current.legs)}`;
+      const dutyRoute = routeText(current.legs);
+      const dutyStart = fullDateTime(dateStr, ci);
+      const dutyEnd = fullDateTime(dateStr, co, startMinutes);
+      const crewLines = current.legs.map(l => {
+        const c = getCrew(crewMap, current.dateKey, l.flight);
+        return c ? `${l.flight}: ${c}` : `${l.flight}: tripulación no informada`;
+      });
 
-    const first = currentDuty.legs[0];
-    const last = currentDuty.legs[currentDuty.legs.length - 1];
-    const dateStr = currentDuty.dateStr;
-    const dateKey = currentDuty.dateKey;
-    const ci = currentDuty.checkIn || subtractOneHour(first.std);
-    const co = currentDuty.checkOut || last.co || last.sta;
-    const startMinutes = timeToMinutes(ci);
-    const dutyId = `${dateStr}-duty-${compactFlightsLocal(currentDuty.legs)}`;
-    const dutyRoute = routeTextLocal(currentDuty.legs);
-    const dutyStart = fullDateTime(dateStr, ci);
-    const dutyEnd = fullDateTime(dateStr, co, startMinutes);
+      const dutyInfo = [
+        `Duty: AR${compactFlights(current.legs)}`,
+        `Ruta: ${dutyRoute}`,
+        `Check-in / Report: ${ci}`,
+        `Check-out / Debrief: ${co}`,
+        `Avión: ${first.aircraft || 'E190'}`,
+        '',
+        'Tramos:',
+        ...current.legs.map(l => `${l.flight}: ${l.orig} ${l.std} → ${l.dest} ${l.sta}`),
+        '',
+        'Tripulación:',
+        ...crewLines
+      ];
 
-    const crewLines = currentDuty.legs.map(l => {
-      const c = getCrew(crewMap, dateKey, l.flight);
-      return c ? `${l.flight}: ${c}` : `${l.flight}: tripulación no informada`;
-    });
-
-    const dutyInfo = [
-      `Duty: AR${compactFlightsLocal(currentDuty.legs)}`,
-      `Ruta: ${dutyRoute}`,
-      `Check-in / Report: ${ci}`,
-      `Check-out / Debrief: ${co}`,
-      `Avión: ${first.aircraft || 'E190'}`,
-      '',
-      'Tramos:',
-      ...currentDuty.legs.map(l => `${l.flight}: ${l.orig} ${l.std} - ${l.dest} ${l.sta}`),
-      '',
-      'Tripulación:',
-      ...crewLines
-    ];
-
-    events.push({
-      id: `${dutyId}-report`,
-      type: 'report',
-      dutyId,
-      title: '🕐 REPORT',
-      start: dutyStart,
-      end: fullDateTime(dateStr, first.std),
-      dutyStart,
-      dutyEnd,
-      location: first.orig,
-      description: dutyInfo.join('\n')
-    });
-
-    for (const leg of currentDuty.legs) {
-      const legStartMinutes = timeToMinutes(leg.std);
       events.push({
-        id: `${dutyId}-${leg.flight}-${leg.orig}-${leg.dest}`,
-        type: 'flight',
+        id: `${dutyId}-report`,
+        type: 'report',
         dutyId,
-        title: flightTitle(leg),
-        start: fullDateTime(dateStr, leg.std),
-        end: fullDateTime(dateStr, leg.sta, legStartMinutes),
+        title: `🕐 REPORT`,
+        start: dutyStart,
+        end: fullDateTime(dateStr, first.std),
         dutyStart,
         dutyEnd,
-        location: `${leg.orig}-${leg.dest}`,
-        description: [
-          wxBlock(leg.orig, leg.dest),
-          '',
-          '------------------------',
-          '',
-          `${leg.flight}`,
-          `${leg.orig} - ${leg.dest}`,
-          `STD: ${leg.std}`,
-          `STA: ${leg.sta}`,
-          `Avión: ${leg.aircraft || first.aircraft || 'E190'}`,
-          '',
-          ...dutyInfo
-        ].join('\n')
+        location: first.orig,
+        description: dutyInfo.join('\n')
       });
-    }
 
-    currentDuty = null;
-  }
-
-  function processPendingForCurrentDate() {
-    if (!currentDate || pending.length === 0) return;
-
-    for (const rest of pending) {
-      if (/^(Individual Roster|Página|BUE-CP|Date |ATD |Crew Web Portal|GIL |BOSCOLO |C\/I |10\.2\.|22JUN\.26|23JUN\.26|22JUN26|23JUN26)/i.test(rest)) continue;
-
-      if (/^(OP\s+)?AR\s*\d{3,4}\b/i.test(rest)) {
-        const leg = parseFlight(rest);
-        if (!leg) continue;
-
-        if (!currentDuty) {
-          currentDuty = {
-            dateStr: currentDate.dateStr,
-            dateKey: currentDate.dateKey,
-            checkIn: leg.ci || null,
-            checkOut: leg.co || null,
-            legs: []
-          };
-        }
-
-        if (leg.ci && !currentDuty.checkIn) currentDuty.checkIn = leg.ci;
-        if (leg.co) currentDuty.checkOut = leg.co;
-
-        currentDuty.legs.push({
-          flight: leg.flight,
-          orig: leg.orig,
-          std: leg.std,
-          dest: leg.dest,
-          sta: leg.sta,
-          co: leg.co,
-          aircraft: leg.aircraft
+      for (const leg of current.legs) {
+        const legStartMinutes = timeToMinutes(leg.std);
+        events.push({
+          id: `${dutyId}-${leg.flight}-${leg.orig}-${leg.dest}`,
+          type: 'flight',
+          dutyId,
+          title: flightTitle(leg),
+          start: fullDateTime(dateStr, leg.std),
+          end: fullDateTime(dateStr, leg.sta, legStartMinutes),
+          dutyStart,
+          dutyEnd,
+          location: `${leg.orig}-${leg.dest}`,
+          description: [
+            '🌦 WX RÁPIDO',
+            '',
+            wxBlock(leg.orig, leg.dest),
+            '',
+            '------------------------',
+            '',
+            `${leg.flight}`,
+            `${leg.orig} → ${leg.dest}`,
+            `STD: ${leg.std}`,
+            `STA: ${leg.sta}`,
+            `Avión: ${leg.aircraft || first.aircraft || 'E190'}`,
+            '',
+            ...dutyInfo
+          ].join('\n')
         });
-        continue;
-      }
-
-      const act = parseActivity(rest);
-      if (act) {
-        flushDuty();
-        addActivity(act.code, act.fields, act.original);
-        continue;
       }
     }
-
-    flushDuty();
-    pending = [];
+    current = null;
   }
 
-  for (const raw of lines) {
-    const dm = raw.match(dayOnlyRe);
+  for (const rawLine of lines) {
+    const compact = rawLine.replace(/\s+/g, '');
 
-    if (dm) {
+    const dayMatch = compact.match(new RegExp(`^(\\d{2})${DOW_RE}$`));
+    if (dayMatch) {
       flushDuty();
-      currentDate = dateState(Number(dm[1]));
-      processPendingForCurrentDate();
+      setCurrentDay(Number(dayMatch[1]), dayMatch[2]);
       continue;
     }
 
-    pending.push(raw);
+    const inlineDay = compact.match(new RegExp(`^(\\d{2})${DOW_RE}(.+)$`));
+    let line = rawLine;
+    if (inlineDay) {
+      flushDuty();
+      setCurrentDay(Number(inlineDay[1]), inlineDay[2]);
+      line = inlineDay[3];
+    }
+
+    if (!currentDateStr) continue;
+
+    const leg = parseFlightLine(line);
+    if (leg) {
+      if (!current || current.kind !== 'flight') {
+        current = {
+          kind: 'flight',
+          day: currentDay,
+          dow: currentDow,
+          dayLabel: `${pad2(currentDay)} ${currentDow}`,
+          dateStr: currentDateStr,
+          dateKey: currentDateKey,
+          checkIn: leg.ci || null,
+          checkOut: leg.co || null,
+          legs: []
+        };
+      }
+      current.legs.push({
+        flight: leg.flight,
+        orig: leg.orig,
+        std: leg.std,
+        dest: leg.dest,
+        sta: leg.sta,
+        co: leg.co,
+        aircraft: leg.aircraft
+      });
+      if (leg.ci && !current.checkIn) current.checkIn = leg.ci;
+      if (leg.co) current.checkOut = leg.co;
+      continue;
+    }
+
+    const activity = parseActivityLine(line);
+    if (activity) {
+      flushDuty();
+      const cls = classifyActivity(activity.code);
+      const startMinutes = timeToMinutes(activity.start === '24:00' ? '00:00' : activity.start);
+      events.push({
+        id: `${currentDateStr}-${activity.code.replace(/\W/g, '') || 'OFF'}`,
+        type: cls.type,
+        title: `${activityIcon(cls.type)} ${cls.title}`,
+        start: fullDateTime(currentDateStr, activity.start),
+        end: fullDateTime(currentDateStr, activity.end, startMinutes),
+        location: activity.location,
+        description: `Actividad: ${cls.title}\nCódigo: ${activity.code}\nLínea original: ${activity.raw}`
+      });
+      continue;
+    }
   }
 
-  // If extraction ends with pending but no following day, ignore it because in this PDF layout
-  // meaningful schedule rows are followed by their date marker.
+  flushDuty();
+
+  // Quitar duplicados exactos por seguridad.
+  const unique = [];
+  const seen = new Set();
+  for (const ev of events) {
+    const key = `${ev.id}|${ev.start}|${ev.end}|${ev.title}`;
+    if (!seen.has(key)) { seen.add(key); unique.push(ev); }
+  }
+  events.length = 0;
+  events.push(...unique);
 
   events.sort((a, b) => a.start.localeCompare(b.start));
 
+  // Descanso entre duties: C/O del duty anterior a C/I del próximo duty.
+  // La vista v5.2 separa REPORT / tramos / DEBRIEF, pero el descanso se calcula por duty completo.
   const dutyMap = new Map();
   for (const ev of events) {
     if (!ev.dutyId) continue;
@@ -593,11 +519,10 @@ function parseRoster(text, filePath = '') {
   }
 
   const duties = Array.from(dutyMap.values()).sort((a, b) => a.start.localeCompare(b.start));
-  for (let k = 0; k < duties.length; k++) {
-    const prev = duties[k - 1] || null;
-    const curr = duties[k];
-    const next = duties[k + 1] || null;
-
+  for (let i = 0; i < duties.length; i++) {
+    const prev = duties[i - 1] || null;
+    const curr = duties[i];
+    const next = duties[i + 1] || null;
     let restPrevious = '';
     let restNext = '';
     let restPreviousStatus = 'ok';
@@ -619,19 +544,17 @@ function parseRoster(text, filePath = '') {
       ev.restNext = restNext;
       ev.restPreviousStatus = restPreviousStatus;
       ev.restNextStatus = restNextStatus;
-
-      const parts = [];
-      if (restPrevious) parts.push(`Descanso previo: ${restPrevious}`);
-      if (restNext) parts.push(`Descanso posterior: ${restNext}`);
-
-      if (parts.length) ev.description = `${parts.join('\n')}\n\n${ev.description || ''}`;
+      const restLines = [];
+      if (restPrevious) restLines.push(`Descanso previo: ${restPrevious}`);
+      if (restNext) restLines.push(`Descanso posterior: ${restNext}`);
+      if (restLines.length) ev.description = `${restLines.join('\n')}\n\n${ev.description || ''}`;
     }
   }
 
-  debug.push(`Eventos generados: ${events.length}`);
-  debug.push('Primeros eventos: ' + events.slice(0, 10).map(e => `${e.title} ${e.start}`).join(' | '));
+  debug.push(`Líneas normalizadas: ${lines.length}`);
+  debug.push(`Eventos detectados: ${events.length}`);
+  if (events.length === 0) debug.push('No se detectaron eventos. Revisar el texto crudo en la vista Debug.');
   return { events, debug };
 }
-
 
 window.RosterParser = { parseRoster, formatDuration };

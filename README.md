@@ -45,26 +45,3 @@ En iPhone/Android usa Web Share API cuando está disponible. Si no, abre/descarg
 
 ## v2.1 PWA
 Agrega ícono propio y manifest para iPhone/Android.
-
-
-## v2.7 line parser date fix
-
-- Parser por líneas para respetar fecha real de cada duty.
-- Corrige bug donde el primer tramo del duty caía el día anterior.
-- Cache busting en parser/app/ics.
-- Android desactivado temporalmente.
-
-
-## v2.8 space day parser fix
-
-- Acepta fechas con o sin espacio:
-  - 22MON
-  - 22 MON
-- Agrega muestra de líneas en debug si vuelve a fallar.
-
-
-## v2.9 pending date parser
-
-- Corrige layout PDF.js donde la línea del evento aparece antes de la fecha.
-- Ej: OP AR1824 ... luego 24WED => asigna AR1824 al 24.
-- Debug muestra primeros eventos generados.
