@@ -337,20 +337,20 @@ function parseRoster(text, filePath = '') {
   debug.push(`Mes inicial detectado: ${currentMonth + 1}`);
   debug.push(`Tripulaciones detectadas: ${Object.keys(crewMap).length}`);
 
-  // IMPORTANTE: el PDF trae al final tripulaciones y leyendas de códigos.
-  // Si las parseamos como si fueran programación, aparecen eventos falsos
-  // en el último día leído (por ejemplo 30 TUE con GUA/MED/GAB/etc.).
-  // Por eso usamos el texto completo para tripulaciones, pero para eventos
-  // cortamos antes de esa sección.
+  // Usamos el texto completo para tripulación, pero cortamos antes de la sección final
+  // para no convertir la leyenda de códigos en eventos falsos.
   const cutMarkers = ['Tripulación del vuelo', 'Day Notes', 'Activity Notes', 'Descripción'];
-  let scheduleText = text;
+  let scheduleText = text.replace(/\r/g, '');
   for (const marker of cutMarkers) {
     const idx = scheduleText.indexOf(marker);
     if (idx !== -1) scheduleText = scheduleText.slice(0, idx);
   }
 
-  const normalized = normalizeRosterText(scheduleText);
-  const lines = normalized.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  // v7.3: parser lineal autoritativo por renglón real del PDF.
+  // Regla: la fecha que aparece al inicio del renglón manda para A/T, OFF, GUA, VAC, etc.
+  // Los vuelos se agrupan solo por renglones OP consecutivos dentro de ese día.
+  // La tripulación solo se usa como respaldo para validar la fecha de vuelos, nunca para mover actividades.
+  const rawLines = scheduleText.split(/\n/).map(l => l.trim()).filter(Boolean);
 
   let currentDay = null;
   let currentDow = '';
@@ -366,15 +366,15 @@ function parseRoster(text, filePath = '') {
     }
     lastDaySeen = day;
     currentDay = day;
-    currentDow = dow;
+    currentDow = dow || '';
     currentDateStr = dateFor(day, currentMonth, currentYear);
     currentDateKey = `${pad2(day)}${MONTH_NAMES[currentMonth]}${String(currentYear).slice(2)}`;
   }
 
-  function addMinutesIso(iso, mins) {
-    const d = new Date(iso);
-    d.setMinutes(d.getMinutes() + mins);
-    return d.toISOString().slice(0, 19);
+  function dutyKeyForLegs(dateStr, legs) {
+    const first = legs[0];
+    const last = legs[legs.length - 1];
+    return `${dateStr}-duty-${first.flight}-${first.orig}-${last.dest}-${first.std}`;
   }
 
   function flightTitle(leg) {
@@ -388,17 +388,16 @@ function parseRoster(text, filePath = '') {
       const first = current.legs[0];
       const last = current.legs[current.legs.length - 1];
 
-      // Fix real: para vuelos, la fecha de la sección Tripulación del vuelo es la fuente
-      // más confiable cuando PDF.js extrae la fecha corrida o fuera de orden.
-      // Ej.: AR1824 aparece visualmente 24WED y tripu 24JUN.26; nunca debe quedar 23/6.
-      const crewKey = crewDateKeyForFlight(crewMap, first.flight, current.dateKey);
-      const crewDateStr = dateFromCrewKey(crewKey);
-      const dateStr = crewDateStr || current.dateStr;
+      // Para vuelos, si existe tripulación en la misma fecha, se conserva.
+      // Si PDF.js dejó un vuelo corrido de día, se corrige con la fecha de tripulación.
+      const crewKey = crewDateKeyForFlight(crewMap, first.flight, current.dateKey) || current.dateKey;
+      const dateStr = dateFromCrewKey(crewKey) || current.dateStr;
       const dateKey = crewKey || current.dateKey;
+
       const ci = current.checkIn || subtractOneHour(first.std);
       const co = current.checkOut || last.co || last.sta;
       const startMinutes = timeToMinutes(ci);
-      const dutyId = `${dateStr}-duty-${compactFlights(current.legs)}`;
+      const dutyId = dutyKeyForLegs(dateStr, current.legs);
       const dutyRoute = routeText(current.legs);
       const dutyStart = fullDateTime(dateStr, ci);
       const dutyEnd = fullDateTime(dateStr, co, startMinutes);
@@ -411,7 +410,7 @@ function parseRoster(text, filePath = '') {
         `Duty: AR${compactFlights(current.legs)}`,
         `Ruta: ${dutyRoute}`,
         `Check-in / Report: ${ci}`,
-        `Check-out / Debrief: ${co}`,
+        `Check-out: ${co}`,
         `Avión: ${first.aircraft || 'E190'}`,
         '',
         'Tramos:',
@@ -438,7 +437,7 @@ function parseRoster(text, filePath = '') {
         const legStartMinutes = timeToMinutes(leg.std);
         const legCrew = getCrew(crewMap, dateKey, leg.flight);
         events.push({
-          id: `${dutyId}-${leg.flight}-${leg.orig}-${leg.dest}`,
+          id: `${dutyId}-${leg.flight}-${leg.orig}-${leg.dest}-${leg.std.replace(':','')}`,
           type: 'flight',
           dutyId,
           title: flightTitle(leg),
@@ -449,8 +448,6 @@ function parseRoster(text, filePath = '') {
           location: `${leg.orig}-${leg.dest}`,
           description: [
             legCrew ? `Tripulación: ${legCrew}` : 'Tripulación: no informada',
-            '',
-            '🌦 WX RÁPIDO',
             '',
             wxBlock(leg.orig, leg.dest),
             '',
@@ -470,22 +467,19 @@ function parseRoster(text, filePath = '') {
     current = null;
   }
 
-  for (const rawLine of lines) {
-    const compact = rawLine.replace(/\s+/g, '');
+  for (const rawLine of rawLines) {
+    // Saltar headers y renglones administrativos.
+    if (/^(Individual Roster|Página|BUE-CP|Date\s+DD|GIL\s+ULISES|ATD\s+ATA|Crew Web Portal)/i.test(rawLine)) continue;
+    if (/^\d{2}[A-Z]{3}\.\d{2}\s+\d{2}:\d{2}$/.test(rawLine)) continue;
 
-    const dayMatch = compact.match(new RegExp(`^(\\d{2})${DOW_RE}$`));
-    if (dayMatch) {
-      flushDuty();
-      setCurrentDay(Number(dayMatch[1]), dayMatch[2]);
-      continue;
-    }
-
-    const inlineDay = compact.match(new RegExp(`^(\\d{2})${DOW_RE}(.+)$`));
     let line = rawLine;
-    if (inlineDay) {
+    const dateMatch = rawLine.match(/^(\d{2})(MON|TUE|WED|THU|FRI|SAT|SUN)\b\s*(.*)$/);
+    if (dateMatch) {
+      // Nuevo día impreso: cerrar duty anterior y setear fecha propia del renglón.
       flushDuty();
-      setCurrentDay(Number(inlineDay[1]), inlineDay[2]);
-      line = inlineDay[3];
+      setCurrentDay(Number(dateMatch[1]), dateMatch[2]);
+      line = dateMatch[3] || '';
+      if (!line.trim()) continue;
     }
 
     if (!currentDateStr) continue;
@@ -497,7 +491,6 @@ function parseRoster(text, filePath = '') {
           kind: 'flight',
           day: currentDay,
           dow: currentDow,
-          dayLabel: `${pad2(currentDay)} ${currentDow}`,
           dateStr: currentDateStr,
           dateKey: currentDateKey,
           checkIn: leg.ci || null,
@@ -525,7 +518,7 @@ function parseRoster(text, filePath = '') {
       const cls = classifyActivity(activity.code);
       const startMinutes = timeToMinutes(activity.start === '24:00' ? '00:00' : activity.start);
       events.push({
-        id: `${currentDateStr}-${activity.code.replace(/\W/g, '') || 'OFF'}`,
+        id: `${currentDateStr}-${activity.code.replace(/\W/g, '') || 'OFF'}-${activity.start.replace(':','')}`,
         type: cls.type,
         title: `${activityIcon(cls.type)} ${cls.title}`,
         start: fullDateTime(currentDateStr, activity.start),
@@ -539,141 +532,18 @@ function parseRoster(text, filePath = '') {
 
   flushDuty();
 
-  // v7.2: reconstruir actividades desde las fechas impresas del roster.
-  // Los vuelos pueden corregirse con la fecha de Tripulación del vuelo, pero
-  // A/T, OFF (*), GUA, VAC, D/L, CRM, ESM, etc. SIEMPRE deben quedar en la fecha
-  // de su propio renglón (ej.: 23TUE A/T, 25THU *, 28SUN GUA).
-  // Esto evita que una corrección de vuelos arrastre actividades al día incorrecto.
-  function buildAuthoritativeActivities() {
-    const out = [];
-    let aYear = baseYear;
-    let aMonth = monthFromHeader(text);
-    if (aMonth === null) aMonth = new Date().getMonth();
-    let aLastDay = null;
-    let aDateStr = '';
-
-    function setAuthDay(day) {
-      if (aLastDay !== null && day < aLastDay) {
-        aMonth += 1;
-        if (aMonth > 11) { aMonth = 0; aYear += 1; }
-      }
-      aLastDay = day;
-      aDateStr = dateFor(day, aMonth, aYear);
-    }
-
-    for (const raw of lines) {
-      const compact = raw.replace(/\s+/g, '');
-      const dayOnly = compact.match(new RegExp(`^(\\d{2})${DOW_RE}$`));
-      if (dayOnly) {
-        setAuthDay(Number(dayOnly[1]));
-        continue;
-      }
-
-      let line = raw;
-      const inline = compact.match(new RegExp(`^(\\d{2})${DOW_RE}(.+)$`));
-      if (inline) {
-        setAuthDay(Number(inline[1]));
-        line = inline[3];
-      }
-
-      if (!aDateStr) continue;
-      const act = parseActivityLine(line);
-      if (!act) continue;
-
-      const cls = classifyActivity(act.code);
-      const startMinutes = timeToMinutes(act.start === '24:00' ? '00:00' : act.start);
-      out.push({
-        id: `${aDateStr}-${act.code.replace(/\W/g, '') || 'OFF'}`,
-        type: cls.type,
-        title: `${activityIcon(cls.type)} ${cls.title}`,
-        start: fullDateTime(aDateStr, act.start),
-        end: fullDateTime(aDateStr, act.end, startMinutes),
-        location: act.location,
-        description: `Actividad: ${cls.title}\nCódigo: ${act.code}\nLínea original: ${act.raw}`
-      });
-    }
-    return out;
-  }
-
-  const authoritativeActivities = buildAuthoritativeActivities();
-  const flightReportEvents = events.filter(ev => ev.dutyId || ev.type === 'flight' || ev.type === 'report' || ev.type === 'debrief');
-  events.length = 0;
-  events.push(...flightReportEvents, ...authoritativeActivities);
-
-  // Quitar duplicados exactos por seguridad.
+  // Deduplicar por contenido real.
   const unique = [];
   const seen = new Set();
   for (const ev of events) {
-    const key = `${ev.id}|${ev.start}|${ev.end}|${ev.title}`;
+    const key = `${ev.type}|${ev.title}|${ev.start}|${ev.end}|${ev.location || ''}`;
     if (!seen.has(key)) { seen.add(key); unique.push(ev); }
   }
   events.length = 0;
   events.push(...unique);
-
-  events.sort((a, b) => a.start.localeCompare(b.start));
-
-  // v7.1: NO mover actividades por superposición.
-  // La fecha real de A/T, OFF, GUA, VAC, etc. sale del renglón del roster
-  // (23TUE A/T, 25THU *, 28SUN GUA). Moverlas por overlap rompía guardias/OFF.
-  events.sort((a, b) => a.start.localeCompare(b.start));
-
-  // v7.1: unir duties partidos por PDF.js.
-  // Caso típico: AR1824 queda corregido por fecha de tripu a 24/6, pero la marca
-  // 24WED aparece después y PDF.js arma otro REPORT a mitad del duty para AR1431.
-  // Si un nuevo REPORT empieza en el mismo aeropuerto donde terminó el vuelo anterior
-  // y se pisa/queda pegado al tramo anterior, es continuación del mismo duty.
-  const flightsByStart = events
-    .filter(ev => ev.type === 'flight')
-    .sort((a, b) => a.start.localeCompare(b.start));
-
-  const dutyAlias = new Map();
-  const reportsToRemove = new Set();
-  let previousFlight = null;
-
-  for (const flight of flightsByStart) {
-    if (previousFlight && previousFlight.dutyId !== flight.dutyId) {
-      const prevDest = String(previousFlight.location || '').split('-')[1] || '';
-      const currOrig = String(flight.location || '').split('-')[0] || '';
-      const gapMin = minutesBetweenIso(previousFlight.end, flight.start);
-      const sameDate = previousFlight.start.slice(0, 10) === flight.start.slice(0, 10);
-
-      if (sameDate && prevDest && currOrig && prevDest === currOrig && gapMin >= -60 && gapMin <= 180) {
-        dutyAlias.set(flight.dutyId, previousFlight.dutyId);
-        for (const ev of events) {
-          if (ev.dutyId === flight.dutyId && ev.type === 'report') { reportsToRemove.add(ev.id); ev._removeReport = true; }
-        }
-      }
-    }
-    previousFlight = flight;
-  }
-
-  function rootDutyId(id) {
-    let out = id;
-    const guard = new Set();
-    while (dutyAlias.has(out) && !guard.has(out)) {
-      guard.add(out);
-      out = dutyAlias.get(out);
-    }
-    return out;
-  }
-
-  for (const ev of events) {
-    if (!ev.dutyId) continue;
-    const root = rootDutyId(ev.dutyId);
-    if (root !== ev.dutyId) {
-      ev.dutyId = root;
-      ev.id = `${root}-${safeUid(ev.title)}-${safeUid(ev.location || '')}-${String(ev.start).slice(11,16).replace(':','')}`;
-    }
-  }
-
-  const noDuplicateReports = events.filter(ev => !(ev.type === 'report' && (reportsToRemove.has(ev.id) || ev._removeReport)));
-  events.length = 0;
-  events.push(...noDuplicateReports);
-
   events.sort((a, b) => a.start.localeCompare(b.start));
 
   // Descanso entre duties: C/O del duty anterior a C/I del próximo duty.
-  // La vista v5.2 separa REPORT / tramos / DEBRIEF, pero el descanso se calcula por duty completo.
   const dutyMap = new Map();
   for (const ev of events) {
     if (!ev.dutyId) continue;
@@ -719,11 +589,9 @@ function parseRoster(text, filePath = '') {
     }
   }
 
-  debug.push('Parser: v7.2 authoritative-activities + crew-date + merge-report-fix');
-  debug.push(`Líneas normalizadas: ${lines.length}`);
+  debug.push('Parser: v7.3 line-based-authoritative-activities');
+  debug.push(`Líneas leídas: ${rawLines.length}`);
   debug.push(`Eventos detectados: ${events.length}`);
-  if (events.length === 0) debug.push('No se detectaron eventos. Revisar el texto crudo en la vista Debug.');
   return { events, debug };
 }
-
 window.RosterParser = { parseRoster, formatDuration };

@@ -1,6 +1,3 @@
-Roster Calendar Pro Web v7.2
+Roster Calendar Pro Web v7.3
 
-- Actividades (A/T, OFF, GUA, VAC, D/L) usan fecha propia del renglón
-- Vuelos usan fecha de tripulación como respaldo
-- Corrige REPORT duplicado
-- Apple Calendar estable
+Apple Calendar line-based authoritative parser.
