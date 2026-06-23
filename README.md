@@ -61,3 +61,10 @@ Agrega ícono propio y manifest para iPhone/Android.
   - 22MON
   - 22 MON
 - Agrega muestra de líneas en debug si vuelve a fallar.
+
+
+## v2.9 pending date parser
+
+- Corrige layout PDF.js donde la línea del evento aparece antes de la fecha.
+- Ej: OP AR1824 ... luego 24WED => asigna AR1824 al 24.
+- Debug muestra primeros eventos generados.

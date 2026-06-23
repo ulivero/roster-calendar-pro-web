@@ -89,6 +89,7 @@ function cleanCrew(s) {
 }
 
 
+
 function parseCrew(text) {
   const crew = {};
   const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
@@ -297,6 +298,7 @@ function wxBlock(orig, dest) {
 }
 
 
+
 function parseRoster(text, filePath = '') {
   const debug = [];
   const events = [];
@@ -309,7 +311,7 @@ function parseRoster(text, filePath = '') {
   debug.push(`Año detectado: ${baseYear}`);
   debug.push(`Mes inicial detectado: ${currentMonth + 1}`);
   debug.push(`Tripulaciones detectadas: ${Object.keys(crewMap).length}`);
-  debug.push('Parser: line-based v2.8 space-day fix');
+  debug.push('Parser: pending-lines v2.9');
 
   let scheduleText = text;
   const cutMarkers = ['Tripulación del vuelo', 'Day Notes', 'Activity Notes', 'Descripción'];
@@ -323,19 +325,19 @@ function parseRoster(text, filePath = '') {
     .map(l => l.replace(/\s+/g, ' ').trim())
     .filter(Boolean);
 
-  debug.push('Muestra líneas: ' + lines.slice(0, 25).join(' | '));
+  debug.push('Muestra líneas: ' + lines.slice(0, 35).join(' | '));
 
   const DOW = '(MON|TUE|WED|THU|FRI|SAT|SUN)';
-  const dayRe = new RegExp(`^(\\d{2})\\s*${DOW}\\s+(.+)$`);
+  const dayOnlyRe = new RegExp(`^(\\d{2})\\s*${DOW}\\s*$`);
   const timeRe = /^\d{2}:\d{2}$/;
   const airportRe = /^[A-Z]{3}$/;
-  const flightRe = /^AR\s*\d{3,4}$/;
   const acRe = /^[A-Z]\d{2,3}$/;
   const activityRe = /^(A\/T|D\/L|GUA|GAB|MED|NPR|RAC|VAC|CRM|ESM|\*)$/;
 
   let lastDaySeen = null;
   let currentDate = null;
   let currentDuty = null;
+  let pending = [];
 
   function dateState(day) {
     if (lastDaySeen !== null && day < lastDaySeen) {
@@ -350,17 +352,6 @@ function parseRoster(text, filePath = '') {
     };
   }
 
-  function addMinutesIsoLocal(iso, mins) {
-    const d = new Date(iso);
-    d.setMinutes(d.getMinutes() + mins);
-    return d.toISOString().slice(0, 19);
-  }
-
-  function flightTitle(leg) {
-    const hhmm = (leg.std || '').replace(':', '');
-    return `✈️ ${leg.orig} - ${leg.dest} ${leg.flight} (${hhmm}L)`;
-  }
-
   function compactFlightsLocal(legs) {
     return legs.map(l => l.flight.replace('AR', '')).join('/');
   }
@@ -372,6 +363,11 @@ function parseRoster(text, filePath = '') {
     return parts.join(' - ');
   }
 
+  function flightTitle(leg) {
+    const hhmm = (leg.std || '').replace(':', '');
+    return `✈️ ${leg.orig} - ${leg.dest} ${leg.flight} (${hhmm}L)`;
+  }
+
   function parseFlight(rest) {
     let s = rest.replace(/^OP\s+/i, '').trim().replace(/^(AR)\s+(\d{3,4})/i, 'AR$2');
     const t = s.split(/\s+/).filter(Boolean);
@@ -381,7 +377,8 @@ function parseRoster(text, filePath = '') {
     const flight = t[0].toUpperCase();
     let ci = null;
 
-    // First leg has C/I: AR1724 06:00 AEP 06:58 SFN 08:04 E90
+    // First leg may have C/I after flight number:
+    // AR1724 06:00 AEP 06:58 SFN 08:04 E90
     if (timeRe.test(t[idx]) && airportRe.test(t[idx + 1]) && timeRe.test(t[idx + 2])) {
       ci = t[idx];
       idx += 1;
@@ -413,10 +410,10 @@ function parseRoster(text, filePath = '') {
   function parseActivity(rest) {
     const t = rest.split(/\s+/).filter(Boolean);
     if (!t.length || !activityRe.test(t[0])) return null;
-    return { code: t[0], fields: t.slice(1) };
+    return { code: t[0], fields: t.slice(1), original: rest };
   }
 
-  function addActivity(code, fields) {
+  function addActivity(code, fields, original) {
     if (!currentDate) return;
     const cls = classifyActivity(code);
     const times = fields.filter(x => timeRe.test(x));
@@ -424,20 +421,16 @@ function parseRoster(text, filePath = '') {
     let start = times[0] || '00:00';
     let end = times[times.length - 1] || '23:59';
 
-    if ((code === '*' || code === 'D/L' || code === 'VAC') && times.length >= 2) {
-      start = times[0];
-      end = times[times.length - 1];
-    }
-
     const startMinutes = timeToMinutes(start === '24:00' ? '00:00' : start);
+
     events.push({
-      id: `${currentDate.dateStr}-${code.replace(/\W/g, '') || 'OFF'}-${classifyActivity(code).title}`,
+      id: `${currentDate.dateStr}-${code.replace(/\W/g, '') || 'OFF'}-${cls.title}`,
       type: cls.type,
       title: `${activityIcon(cls.type)} ${cls.title}`,
       start: fullDateTime(currentDate.dateStr, start),
       end: fullDateTime(currentDate.dateStr, end, startMinutes),
       location: airports[0] || '',
-      description: `Actividad: ${cls.title}\nCódigo: ${code}\nLínea original: ${code} ${fields.join(' ')}`
+      description: `Actividad: ${cls.title}\nCódigo: ${code}\nLínea original: ${original || (code + ' ' + fields.join(' '))}`
     });
   }
 
@@ -522,59 +515,69 @@ function parseRoster(text, filePath = '') {
     currentDuty = null;
   }
 
-  for (const raw of lines) {
-    if (/^(Individual Roster|Página|BUE-CP|Date |ATD |Crew Web Portal|GIL |BOSCOLO )/i.test(raw)) continue;
+  function processPendingForCurrentDate() {
+    if (!currentDate || pending.length === 0) return;
 
-    let rest = raw;
-    const dm = raw.match(dayRe);
+    for (const rest of pending) {
+      if (/^(Individual Roster|Página|BUE-CP|Date |ATD |Crew Web Portal|GIL |BOSCOLO |C\/I |10\.2\.|22JUN\.26|23JUN\.26|22JUN26|23JUN26)/i.test(rest)) continue;
+
+      if (/^(OP\s+)?AR\s*\d{3,4}\b/i.test(rest)) {
+        const leg = parseFlight(rest);
+        if (!leg) continue;
+
+        if (!currentDuty) {
+          currentDuty = {
+            dateStr: currentDate.dateStr,
+            dateKey: currentDate.dateKey,
+            checkIn: leg.ci || null,
+            checkOut: leg.co || null,
+            legs: []
+          };
+        }
+
+        if (leg.ci && !currentDuty.checkIn) currentDuty.checkIn = leg.ci;
+        if (leg.co) currentDuty.checkOut = leg.co;
+
+        currentDuty.legs.push({
+          flight: leg.flight,
+          orig: leg.orig,
+          std: leg.std,
+          dest: leg.dest,
+          sta: leg.sta,
+          co: leg.co,
+          aircraft: leg.aircraft
+        });
+        continue;
+      }
+
+      const act = parseActivity(rest);
+      if (act) {
+        flushDuty();
+        addActivity(act.code, act.fields, act.original);
+        continue;
+      }
+    }
+
+    flushDuty();
+    pending = [];
+  }
+
+  for (const raw of lines) {
+    const dm = raw.match(dayOnlyRe);
+
     if (dm) {
       flushDuty();
       currentDate = dateState(Number(dm[1]));
-      rest = dm[3].trim();
-    }
-
-    if (!currentDate) continue;
-
-    // Lines from layout extraction can have OP separated, or not.
-    if (/^(OP\s+)?AR\s*\d{3,4}\b/i.test(rest)) {
-      const leg = parseFlight(rest);
-      if (!leg) continue;
-
-      if (!currentDuty) {
-        currentDuty = {
-          dateStr: currentDate.dateStr,
-          dateKey: currentDate.dateKey,
-          checkIn: leg.ci || null,
-          checkOut: leg.co || null,
-          legs: []
-        };
-      }
-
-      if (leg.ci && !currentDuty.checkIn) currentDuty.checkIn = leg.ci;
-      if (leg.co) currentDuty.checkOut = leg.co;
-      currentDuty.legs.push({
-        flight: leg.flight,
-        orig: leg.orig,
-        std: leg.std,
-        dest: leg.dest,
-        sta: leg.sta,
-        co: leg.co,
-        aircraft: leg.aircraft
-      });
+      processPendingForCurrentDate();
       continue;
     }
 
-    const act = parseActivity(rest);
-    if (act) {
-      flushDuty();
-      addActivity(act.code, act.fields);
-      continue;
-    }
+    pending.push(raw);
   }
 
-  flushDuty();
+  // If extraction ends with pending but no following day, ignore it because in this PDF layout
+  // meaningful schedule rows are followed by their date marker.
 
-  // Rest computation, copied from stable desktop/web logic.
   events.sort((a, b) => a.start.localeCompare(b.start));
 
   const dutyMap = new Map();
@@ -594,6 +597,7 @@ function parseRoster(text, filePath = '') {
     const prev = duties[k - 1] || null;
     const curr = duties[k];
     const next = duties[k + 1] || null;
+
     let restPrevious = '';
     let restNext = '';
     let restPreviousStatus = 'ok';
@@ -615,14 +619,17 @@ function parseRoster(text, filePath = '') {
       ev.restNext = restNext;
       ev.restPreviousStatus = restPreviousStatus;
       ev.restNextStatus = restNextStatus;
+
       const parts = [];
       if (restPrevious) parts.push(`Descanso previo: ${restPrevious}`);
       if (restNext) parts.push(`Descanso posterior: ${restNext}`);
+
       if (parts.length) ev.description = `${parts.join('\n')}\n\n${ev.description || ''}`;
     }
   }
 
   debug.push(`Eventos generados: ${events.length}`);
+  debug.push('Primeros eventos: ' + events.slice(0, 10).map(e => `${e.title} ${e.start}`).join(' | '));
   return { events, debug };
 }
 
