@@ -309,7 +309,7 @@ function parseRoster(text, filePath = '') {
   debug.push(`Año detectado: ${baseYear}`);
   debug.push(`Mes inicial detectado: ${currentMonth + 1}`);
   debug.push(`Tripulaciones detectadas: ${Object.keys(crewMap).length}`);
-  debug.push('Parser: mixed date-line v3.2 Apple fixed');
+  debug.push('Parser: hybrid-date v3.3 Apple fixed');
 
   let scheduleText = text;
   for (const marker of ['Tripulación del vuelo', 'Day Notes', 'Activity Notes', 'Descripción']) {
@@ -326,7 +326,6 @@ function parseRoster(text, filePath = '') {
 
   const DOW = '(MON|TUE|WED|THU|FRI|SAT|SUN)';
   const dayOnlyRe = new RegExp(`^(\\d{2})\\s*${DOW}\\s*$`);
-  const dayWithRestRe = new RegExp(`^(\\d{2})\\s*${DOW}\\s+(.+)$`);
   const timeRe = /^\d{2}:\d{2}$/;
   const airportRe = /^[A-Z]{3}$/;
   const acRe = /^[A-Z]\d{2,3}$/;
@@ -336,6 +335,8 @@ function parseRoster(text, filePath = '') {
   let currentDate = null;
   let currentDuty = null;
   let heldLine = null;
+  let delayedRowsApplied = 0;
+  let inlineDateRows = 0;
 
   function dateState(day) {
     if (lastDaySeen !== null && day < lastDaySeen) {
@@ -550,47 +551,61 @@ function parseRoster(text, filePath = '') {
     }
   }
 
+  const inlineDayRe = new RegExp(`^(\d{2})\s*${DOW}\s+(.+)$`);
+
+  function looksLikeFirstRowOfNewDay(line) {
+    const txt = String(line || '').trim();
+    // First flight row normally includes check-in after AR####:
+    // AR1824 06:55 EZE 07:55 CRD 10:30 E90
+    if (/^(OP\s+)?AR\s*\d{3,4}\s+\d{2}:\d{2}\s+[A-Z]{3}\s+\d{2}:\d{2}/i.test(txt)) return true;
+    // Ground/off/standby/vacation rows are also single first rows for their day.
+    if (/^(A\/T|D\/L|GUA|GAB|MED|NPR|RAC|VAC|CRM|ESM|\*)\b/i.test(txt)) return true;
+    return false;
+  }
+
+  function processHeldAsPreviousDay() {
+    if (heldLine && currentDate) processLineForCurrentDate(heldLine);
+    heldLine = null;
+  }
+
   for (const raw of lines) {
-    const dmFull = raw.match(dayWithRestRe);
-    if (dmFull) {
-      // Normal roster extraction: date and first activity/flight are on the same line.
-      // IMPORTANT: do not apply delayed-line logic here, otherwise the first item of
-      // the day can be assigned to the previous day.
-      if (heldLine && currentDate) {
-        processLineForCurrentDate(heldLine);
-        heldLine = null;
-      }
+    const inline = raw.match(inlineDayRe);
+    if (inline) {
+      // Normal Apple/PDF text extraction: date and first row are on the SAME line.
+      // Example: 24WED OP AR1824 06:55 EZE 07:55 CRD 10:30 E90
+      processHeldAsPreviousDay();
       flushDuty();
-      currentDate = dateState(Number(dmFull[1]));
-      processLineForCurrentDate(dmFull[3]);
+      currentDate = dateState(Number(inline[1]));
+      inlineDateRows++;
+      processLineForCurrentDate(inline[3]);
       continue;
     }
 
     const dm = raw.match(dayOnlyRe);
-
     if (dm) {
-      // Alternate PDF.js layout: the first row of the day can appear immediately
-      // BEFORE a standalone date marker. In that case, the held line belongs to
-      // the newly detected date.
+      // Some PDF.js runs put the first row immediately BEFORE the date marker.
+      // Only move the held row to the new date when it looks like a first row
+      // (flight with check-in, or single-day activity). This avoids moving the
+      // LAST leg of the previous duty to the next day.
+      const delayedFirstRow = heldLine && looksLikeFirstRowOfNewDay(heldLine);
+      if (!delayedFirstRow) processHeldAsPreviousDay();
       flushDuty();
       currentDate = dateState(Number(dm[1]));
-      if (heldLine) {
+      if (delayedFirstRow) {
         processLineForCurrentDate(heldLine);
         heldLine = null;
+        delayedRowsApplied++;
       }
       continue;
     }
 
-    // Delay every normal line by one, because the next standalone date marker may belong to it.
-    if (heldLine && currentDate) {
-      processLineForCurrentDate(heldLine);
-    }
+    // Hold one line so that if the next token is a date-only marker,
+    // we can decide whether this is the delayed first row of that date.
+    processHeldAsPreviousDay();
     heldLine = raw;
   }
 
-  if (heldLine && currentDate) {
-    processLineForCurrentDate(heldLine);
-  }
+  processHeldAsPreviousDay();
   flushDuty();
 
   events.sort((a, b) => a.start.localeCompare(b.start));
@@ -640,6 +655,8 @@ function parseRoster(text, filePath = '') {
     }
   }
 
+  debug.push(`Filas con fecha inline: ${inlineDateRows}`);
+  debug.push(`Filas demoradas aplicadas a fecha siguiente: ${delayedRowsApplied}`);
   debug.push(`Eventos generados: ${events.length}`);
   debug.push('Primeros eventos: ' + events.slice(0, 12).map(e => `${e.title} ${e.start}`).join(' | '));
   return { events, debug };
