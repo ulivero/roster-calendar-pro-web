@@ -47,9 +47,9 @@ En iPhone/Android usa Web Share API cuando está disponible. Si no, abre/descarg
 Agrega ícono propio y manifest para iPhone/Android.
 
 
-## v2.5 Apple restore
+## v3.0 delayed line parser
 
-- Base restaurada desde v2.1 PWA, que funcionaba bien en Apple.
-- No modifica el generador ICS original.
-- Corrige parser de tripulación.
-- Android desactivado temporalmente para evitar fechas corridas.
+- Corrige layout de Safari/PDF.js:
+  la línea inmediatamente anterior a 24WED pertenece al 24.
+- Evita que el primer vuelo del duty caiga en el día anterior.
+- Android desactivado temporalmente.

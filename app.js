@@ -166,7 +166,7 @@ $('addAppleBtn').addEventListener('click', () => {
 });
 
 $('addAndroidBtn').addEventListener('click', () => {
-  alert('Android queda desactivado por ahora para no romper fechas. Usá Descargar ICS solo para pruebas.');
+  alert('Android desactivado por ahora. Primero dejamos Apple 100% estable.');
 });
 
 
