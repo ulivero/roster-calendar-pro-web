@@ -1,1 +1,1 @@
-Roster Calendar Pro Web v6.9 - Apple fechas por tripulación, OFF estable, Android desactivado temporalmente.
+Roster Calendar Pro Web v7.0 - Apple crew-date + activity overlap safe

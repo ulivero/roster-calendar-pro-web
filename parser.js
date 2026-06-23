@@ -551,6 +551,36 @@ function parseRoster(text, filePath = '') {
 
   events.sort((a, b) => a.start.localeCompare(b.start));
 
+  // v7.0: las actividades de tierra/OFF a veces quedan un día antes porque PDF.js
+  // extrae la columna DATE fuera de orden. Si una actividad sin duty se superpone
+  // con un vuelo/report, la corremos al primer día siguiente libre.
+  function rangesOverlap(aStart, aEnd, bStart, bEnd) {
+    return aStart < bEnd && bStart < aEnd;
+  }
+
+  function shiftEventOneDay(ev) {
+    ev.start = addMinutesIso(ev.start, 24 * 60);
+    ev.end = addMinutesIso(ev.end, 24 * 60);
+    ev.id = `${ev.id}-shifted`;
+  }
+
+  function isDutyEvent(ev) {
+    return ev.dutyId && (ev.type === 'report' || ev.type === 'flight');
+  }
+
+  for (const ev of events) {
+    if (ev.dutyId) continue;
+    if (!['off', 'ground', 'standby', 'medical', 'vacation'].includes(ev.type)) continue;
+
+    let guard = 0;
+    while (guard < 5 && events.some(d => isDutyEvent(d) && rangesOverlap(ev.start, ev.end, d.start, d.end))) {
+      shiftEventOneDay(ev);
+      guard++;
+    }
+  }
+
+  events.sort((a, b) => a.start.localeCompare(b.start));
+
   // Descanso entre duties: C/O del duty anterior a C/I del próximo duty.
   // La vista v5.2 separa REPORT / tramos / DEBRIEF, pero el descanso se calcula por duty completo.
   const dutyMap = new Map();
@@ -598,7 +628,7 @@ function parseRoster(text, filePath = '') {
     }
   }
 
-  debug.push('Parser: v6.8 crew-date-authority + tripu + off-safe');
+  debug.push('Parser: v7.0 crew-date + activity-overlap-safe');
   debug.push(`Líneas normalizadas: ${lines.length}`);
   debug.push(`Eventos detectados: ${events.length}`);
   if (events.length === 0) debug.push('No se detectaron eventos. Revisar el texto crudo en la vista Debug.');
