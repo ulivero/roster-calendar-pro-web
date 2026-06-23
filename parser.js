@@ -551,33 +551,63 @@ function parseRoster(text, filePath = '') {
 
   events.sort((a, b) => a.start.localeCompare(b.start));
 
-  // v7.0: las actividades de tierra/OFF a veces quedan un día antes porque PDF.js
-  // extrae la columna DATE fuera de orden. Si una actividad sin duty se superpone
-  // con un vuelo/report, la corremos al primer día siguiente libre.
-  function rangesOverlap(aStart, aEnd, bStart, bEnd) {
-    return aStart < bEnd && bStart < aEnd;
+  // v7.1: NO mover actividades por superposición.
+  // La fecha real de A/T, OFF, GUA, VAC, etc. sale del renglón del roster
+  // (23TUE A/T, 25THU *, 28SUN GUA). Moverlas por overlap rompía guardias/OFF.
+  events.sort((a, b) => a.start.localeCompare(b.start));
+
+  // v7.1: unir duties partidos por PDF.js.
+  // Caso típico: AR1824 queda corregido por fecha de tripu a 24/6, pero la marca
+  // 24WED aparece después y PDF.js arma otro REPORT a mitad del duty para AR1431.
+  // Si un nuevo REPORT empieza en el mismo aeropuerto donde terminó el vuelo anterior
+  // y se pisa/queda pegado al tramo anterior, es continuación del mismo duty.
+  const flightsByStart = events
+    .filter(ev => ev.type === 'flight')
+    .sort((a, b) => a.start.localeCompare(b.start));
+
+  const dutyAlias = new Map();
+  const reportsToRemove = new Set();
+  let previousFlight = null;
+
+  for (const flight of flightsByStart) {
+    if (previousFlight && previousFlight.dutyId !== flight.dutyId) {
+      const prevDest = String(previousFlight.location || '').split('-')[1] || '';
+      const currOrig = String(flight.location || '').split('-')[0] || '';
+      const gapMin = minutesBetweenIso(previousFlight.end, flight.start);
+      const sameDate = previousFlight.start.slice(0, 10) === flight.start.slice(0, 10);
+
+      if (sameDate && prevDest && currOrig && prevDest === currOrig && gapMin >= -60 && gapMin <= 180) {
+        dutyAlias.set(flight.dutyId, previousFlight.dutyId);
+        for (const ev of events) {
+          if (ev.dutyId === flight.dutyId && ev.type === 'report') reportsToRemove.add(ev.id);
+        }
+      }
+    }
+    previousFlight = flight;
   }
 
-  function shiftEventOneDay(ev) {
-    ev.start = addMinutesIso(ev.start, 24 * 60);
-    ev.end = addMinutesIso(ev.end, 24 * 60);
-    ev.id = `${ev.id}-shifted`;
-  }
-
-  function isDutyEvent(ev) {
-    return ev.dutyId && (ev.type === 'report' || ev.type === 'flight');
+  function rootDutyId(id) {
+    let out = id;
+    const guard = new Set();
+    while (dutyAlias.has(out) && !guard.has(out)) {
+      guard.add(out);
+      out = dutyAlias.get(out);
+    }
+    return out;
   }
 
   for (const ev of events) {
-    if (ev.dutyId) continue;
-    if (!['off', 'ground', 'standby', 'medical', 'vacation'].includes(ev.type)) continue;
-
-    let guard = 0;
-    while (guard < 5 && events.some(d => isDutyEvent(d) && rangesOverlap(ev.start, ev.end, d.start, d.end))) {
-      shiftEventOneDay(ev);
-      guard++;
+    if (!ev.dutyId) continue;
+    const root = rootDutyId(ev.dutyId);
+    if (root !== ev.dutyId) {
+      ev.dutyId = root;
+      ev.id = `${root}-${safeUid(ev.title)}-${safeUid(ev.location || '')}-${String(ev.start).slice(11,16).replace(':','')}`;
     }
   }
+
+  const noDuplicateReports = events.filter(ev => !(ev.type === 'report' && reportsToRemove.has(ev.id)));
+  events.length = 0;
+  events.push(...noDuplicateReports);
 
   events.sort((a, b) => a.start.localeCompare(b.start));
 
@@ -628,7 +658,7 @@ function parseRoster(text, filePath = '') {
     }
   }
 
-  debug.push('Parser: v7.0 crew-date + activity-overlap-safe');
+  debug.push('Parser: v7.1 crew-date + no-activity-shift + merge-split-duty');
   debug.push(`Líneas normalizadas: ${lines.length}`);
   debug.push(`Eventos detectados: ${events.length}`);
   if (events.length === 0) debug.push('No se detectaron eventos. Revisar el texto crudo en la vista Debug.');
