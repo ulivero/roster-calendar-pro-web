@@ -309,7 +309,7 @@ function parseRoster(text, filePath = '') {
   debug.push(`Año detectado: ${baseYear}`);
   debug.push(`Mes inicial detectado: ${currentMonth + 1}`);
   debug.push(`Tripulaciones detectadas: ${Object.keys(crewMap).length}`);
-  debug.push('Parser: delayed-line v3.0');
+  debug.push('Parser: hybrid-row v3.1 Apple-first');
 
   let scheduleText = text;
   for (const marker of ['Tripulación del vuelo', 'Day Notes', 'Activity Notes', 'Descripción']) {
@@ -326,6 +326,7 @@ function parseRoster(text, filePath = '') {
 
   const DOW = '(MON|TUE|WED|THU|FRI|SAT|SUN)';
   const dayOnlyRe = new RegExp(`^(\\d{2})\\s*${DOW}\\s*$`);
+  const dayStartRe = new RegExp(`^(\\d{2})\\s*${DOW}\\b\\s*(.*)$`);
   const timeRe = /^\d{2}:\d{2}$/;
   const airportRe = /^[A-Z]{3}$/;
   const acRe = /^[A-Z]\d{2,3}$/;
@@ -334,7 +335,7 @@ function parseRoster(text, filePath = '') {
   let lastDaySeen = null;
   let currentDate = null;
   let currentDuty = null;
-  let heldLine = null;
+  let pendingBeforeDate = null;
 
   function dateState(day) {
     if (lastDaySeen !== null && day < lastDaySeen) {
@@ -549,29 +550,38 @@ function parseRoster(text, filePath = '') {
     }
   }
 
-  for (const raw of lines) {
-    const dm = raw.match(dayOnlyRe);
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i];
+    const dsm = raw.match(dayStartRe);
 
-    if (dm) {
-      // The PDF.js layout puts the first row of the day immediately BEFORE the date marker.
+    if (dsm) {
       flushDuty();
-      currentDate = dateState(Number(dm[1]));
-      if (heldLine) {
-        processLineForCurrentDate(heldLine);
-        heldLine = null;
+      currentDate = dateState(Number(dsm[1]));
+      const rest = (dsm[3] || '').trim();
+      if (pendingBeforeDate) {
+        processLineForCurrentDate(pendingBeforeDate);
+        pendingBeforeDate = null;
       }
+      if (rest) processLineForCurrentDate(rest);
       continue;
     }
 
-    // Delay every normal line by one, because the next date marker may belong to it.
-    if (heldLine && currentDate) {
-      processLineForCurrentDate(heldLine);
+    const next = lines[i + 1] || '';
+    const nextIsDayOnly = dayOnlyRe.test(next);
+    const looksLikeRosterRow = /^(OP\s+)?AR\s*\d{3,4}\b/i.test(raw) || activityRe.test((raw.split(/\s+/)[0] || ''));
+
+    if (nextIsDayOnly && looksLikeRosterRow) {
+      // Some PDF.js extractions put the first row of a day just BEFORE its date marker.
+      pendingBeforeDate = raw;
+      continue;
     }
-    heldLine = raw;
+
+    processLineForCurrentDate(raw);
   }
 
-  if (heldLine && currentDate) {
-    processLineForCurrentDate(heldLine);
+  if (pendingBeforeDate && currentDate) {
+    processLineForCurrentDate(pendingBeforeDate);
+    pendingBeforeDate = null;
   }
   flushDuty();
 
