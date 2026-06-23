@@ -350,7 +350,14 @@ function parseRoster(text, filePath = '') {
     if (current.kind === 'flight' && current.legs.length) {
       const first = current.legs[0];
       const last = current.legs[current.legs.length - 1];
-      const dateStr = current.dateStr;
+
+      // Fix real: para vuelos, la fecha de la sección Tripulación del vuelo es la fuente
+      // más confiable cuando PDF.js extrae la fecha corrida o fuera de orden.
+      // Ej.: AR1824 aparece visualmente 24WED y tripu 24JUN.26; nunca debe quedar 23/6.
+      const crewKey = crewDateKeyForFlight(crewMap, first.flight);
+      const crewDateStr = dateFromCrewKey(crewKey);
+      const dateStr = crewDateStr || current.dateStr;
+      const dateKey = crewKey || current.dateKey;
       const ci = current.checkIn || subtractOneHour(first.std);
       const co = current.checkOut || last.co || last.sta;
       const startMinutes = timeToMinutes(ci);
@@ -359,7 +366,7 @@ function parseRoster(text, filePath = '') {
       const dutyStart = fullDateTime(dateStr, ci);
       const dutyEnd = fullDateTime(dateStr, co, startMinutes);
       const crewLines = current.legs.map(l => {
-        const c = getCrew(crewMap, current.dateKey, l.flight);
+        const c = getCrew(crewMap, dateKey, l.flight);
         return c ? `${l.flight}: ${c}` : `${l.flight}: tripulación no informada`;
       });
 
@@ -392,7 +399,7 @@ function parseRoster(text, filePath = '') {
 
       for (const leg of current.legs) {
         const legStartMinutes = timeToMinutes(leg.std);
-        const legCrew = getCrew(crewMap, current.dateKey, leg.flight);
+        const legCrew = getCrew(crewMap, dateKey, leg.flight);
         events.push({
           id: `${dutyId}-${leg.flight}-${leg.orig}-${leg.dest}`,
           type: 'flight',
@@ -554,7 +561,7 @@ function parseRoster(text, filePath = '') {
     }
   }
 
-  debug.push('Parser: v6.7 apple-fechas-sin-corrimiento + tripu-visible');
+  debug.push('Parser: v6.8 crew-date-authority + tripu + off-safe');
   debug.push(`Líneas normalizadas: ${lines.length}`);
   debug.push(`Eventos detectados: ${events.length}`);
   if (events.length === 0) debug.push('No se detectaron eventos. Revisar el texto crudo en la vista Debug.');
