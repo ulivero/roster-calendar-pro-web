@@ -65,3 +65,10 @@ Agrega ícono propio y manifest para iPhone/Android.
   - 08 JUL 26
 - Corrige vuelos que salían como "tripulación no informada" cuando la web separaba la fecha.
 - Mantiene Android TZ fix.
+
+
+## v2.3.1 Apple fix
+
+- Botón Apple Calendar vuelve a usar exclusivamente buildICS original.
+- Botón Descargar ICS también usa buildICS original.
+- Botón Android usa buildICSAndroid separado con TZ Argentina.

@@ -136,6 +136,15 @@ $('downloadBtn').addEventListener('click', () => {
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1500);
 });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'roster-calendar-pro.ics';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+});
 
 
 function openICSForCalendar(filename = 'roster-calendar-pro.ics', text = icsText) {
@@ -164,10 +173,12 @@ function openICSForCalendar(filename = 'roster-calendar-pro.ics', text = icsText
 }
 
 $('addAppleBtn').addEventListener('click', () => {
-  openICSForCalendar('roster-apple-calendar.ics');
+  // Apple/iPhone usa SIEMPRE el ICS original, el que ya funcionaba bien.
+  openICSForCalendar('roster-apple-calendar.ics', icsText);
 });
 
 $('addAndroidBtn').addEventListener('click', () => {
+  // Android/Samsung usa ICS separado con TZ Argentina.
   openICSForCalendar('roster-android-calendar.ics', icsTextAndroid);
 });
 
