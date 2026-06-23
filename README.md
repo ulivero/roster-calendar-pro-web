@@ -41,3 +41,7 @@ Agrega botones:
 - 📅 Android / Google Calendar
 
 En iPhone/Android usa Web Share API cuando está disponible. Si no, abre/descarga el ICS como fallback.
+
+
+## v2.1 PWA
+Agrega ícono propio y manifest para iPhone/Android.

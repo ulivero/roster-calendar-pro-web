@@ -1,0 +1,21 @@
+{
+  "name": "Roster ULI",
+  "short_name": "Roster ULI",
+  "description": "Roster PDF a Apple Calendar ICS",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f3f6fb",
+  "theme_color": "#10264a",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
