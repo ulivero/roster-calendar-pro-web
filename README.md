@@ -72,3 +72,10 @@ Agrega ícono propio y manifest para iPhone/Android.
 - Botón Apple Calendar vuelve a usar exclusivamente buildICS original.
 - Botón Descargar ICS también usa buildICS original.
 - Botón Android usa buildICSAndroid separado con TZ Argentina.
+
+
+## v2.3.2 Process PDF fix
+
+- Corrige app.js: elimina bloque duplicado que rompía el JavaScript.
+- El botón Procesar PDF vuelve a funcionar.
+- Mantiene Apple original + Android TZ + crew parser fix.
