@@ -88,21 +88,44 @@ function cleanCrew(s) {
     .trim();
 }
 
+
 function parseCrew(text) {
   const crew = {};
   const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+
   for (const line of lines) {
-    const m = line.match(/^(\d{2})([A-Z]{3})\.?([0-9]{2})\s+(AR\d+)\s+(.+)$/);
+    // Supports:
+    // 08JUL.26 AR1904 ...
+    // 08JUL26 AR1904 ...
+    // 08 JUL.26 AR1904 ...
+    // 08 JUL 26 AR1904 ...
+    const m = line.match(/^(\d{2})\s*([A-Z]{3})\.?\s*(\d{2})\s+(AR\s*\d{3,4})\s+(.+)$/i);
     if (!m) continue;
-    const key = `${m[1]}${m[2]}${m[3]}-${m[4]}`;
-    crew[key] = cleanCrew(m[5]);
+
+    const day = m[1].padStart(2, '0');
+    const mon = m[2].toUpperCase();
+    const yy = m[3];
+    const flight = m[4].replace(/\s+/g, '').toUpperCase();
+    const people = cleanCrew(m[5]);
+
+    const key = `${day}${mon}${yy}-${flight}`;
+    crew[key] = people;
   }
+
   return crew;
 }
 
 function getCrew(crewMap, dateKey, flight) {
-  return crewMap[`${dateKey}-${flight}`] || '';
+  const normalizedFlight = String(flight || '').replace(/\s+/g, '').toUpperCase();
+  const normalizedDateKey = String(dateKey || '').replace(/\./g, '').replace(/\s+/g, '').toUpperCase();
+
+  return (
+    crewMap[`${normalizedDateKey}-${normalizedFlight}`] ||
+    crewMap[`${normalizedDateKey.slice(0, 5)}${normalizedDateKey.slice(-2)}-${normalizedFlight}`] ||
+    ''
+  );
 }
+
 
 function classifyActivity(code) {
   const map = {
@@ -403,8 +426,6 @@ function parseRoster(text, filePath = '') {
           dutyEnd,
           location: `${leg.orig}-${leg.dest}`,
           description: [
-            '🌦 WX RÁPIDO',
-            '',
             wxBlock(leg.orig, leg.dest),
             '',
             '------------------------',

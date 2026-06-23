@@ -2,6 +2,7 @@ let parsedEvents = [];
 let parsedDebug = [];
 let parsedText = '';
 let icsText = '';
+let icsTextAndroid = '';
 
 const $ = id => document.getElementById(id);
 
@@ -106,6 +107,7 @@ $('processBtn').addEventListener('click', async () => {
     const totals = findTotals(parsedText);
 
     icsText = window.RosterICS.buildICS(parsedEvents);
+    icsTextAndroid = window.RosterICS.buildICSAndroid ? window.RosterICS.buildICSAndroid(parsedEvents) : icsText;
 
     renderSummary(parsedEvents, totals);
     renderEvents(parsedEvents);
@@ -136,9 +138,9 @@ $('downloadBtn').addEventListener('click', () => {
 });
 
 
-function openICSForCalendar(filename = 'roster-calendar-pro.ics') {
-  if (!icsText) return;
-  const blob = new Blob([icsText], { type: 'text/calendar;charset=utf-8' });
+function openICSForCalendar(filename = 'roster-calendar-pro.ics', text = icsText) {
+  if (!text) return;
+  const blob = new Blob([text], { type: 'text/calendar;charset=utf-8' });
   const file = new File([blob], filename, { type: 'text/calendar' });
 
   // Best path on modern iPhone/Android: native share sheet.
@@ -166,7 +168,7 @@ $('addAppleBtn').addEventListener('click', () => {
 });
 
 $('addAndroidBtn').addEventListener('click', () => {
-  openICSForCalendar('roster-google-calendar.ics');
+  openICSForCalendar('roster-android-calendar.ics', icsTextAndroid);
 });
 
 

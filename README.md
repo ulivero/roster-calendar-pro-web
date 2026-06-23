@@ -45,3 +45,23 @@ En iPhone/Android usa Web Share API cuando está disponible. Si no, abre/descarg
 
 ## v2.1 PWA
 Agrega ícono propio y manifest para iPhone/Android.
+
+
+## v2.2 Android TZ fix
+
+- Apple Calendar usa el ICS original.
+- Android / Google Calendar usa ICS con:
+  DTSTART;TZID=America/Argentina/Buenos_Aires
+  DTEND;TZID=America/Argentina/Buenos_Aires
+- Esto evita corrimientos por interpretación UTC/Z en Samsung/Google Calendar.
+
+
+## v2.3 Crew fix
+
+- Parser de tripulación más tolerante:
+  - 08JUL.26
+  - 08JUL26
+  - 08 JUL.26
+  - 08 JUL 26
+- Corrige vuelos que salían como "tripulación no informada" cuando la web separaba la fecha.
+- Mantiene Android TZ fix.
