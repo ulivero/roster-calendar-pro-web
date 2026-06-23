@@ -309,7 +309,7 @@ function parseRoster(text, filePath = '') {
   debug.push(`Año detectado: ${baseYear}`);
   debug.push(`Mes inicial detectado: ${currentMonth + 1}`);
   debug.push(`Tripulaciones detectadas: ${Object.keys(crewMap).length}`);
-  debug.push('Parser: line-based v2.7');
+  debug.push('Parser: line-based v2.8 space-day fix');
 
   let scheduleText = text;
   const cutMarkers = ['Tripulación del vuelo', 'Day Notes', 'Activity Notes', 'Descripción'];
@@ -323,8 +323,10 @@ function parseRoster(text, filePath = '') {
     .map(l => l.replace(/\s+/g, ' ').trim())
     .filter(Boolean);
 
+  debug.push('Muestra líneas: ' + lines.slice(0, 25).join(' | '));
+
   const DOW = '(MON|TUE|WED|THU|FRI|SAT|SUN)';
-  const dayRe = new RegExp(`^(\\d{2})${DOW}\\s+(.+)$`);
+  const dayRe = new RegExp(`^(\\d{2})\\s*${DOW}\\s+(.+)$`);
   const timeRe = /^\d{2}:\d{2}$/;
   const airportRe = /^[A-Z]{3}$/;
   const flightRe = /^AR\s*\d{3,4}$/;

@@ -53,3 +53,11 @@ Agrega ícono propio y manifest para iPhone/Android.
 - Corrige bug donde el primer tramo del duty caía el día anterior.
 - Cache busting en parser/app/ics.
 - Android desactivado temporalmente.
+
+
+## v2.8 space day parser fix
+
+- Acepta fechas con o sin espacio:
+  - 22MON
+  - 22 MON
+- Agrega muestra de líneas en debug si vuelve a fallar.
