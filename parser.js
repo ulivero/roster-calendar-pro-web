@@ -104,6 +104,43 @@ function getCrew(crewMap, dateKey, flight) {
   return crewMap[`${dateKey}-${flight}`] || '';
 }
 
+
+function dateFromCrewKey(dateKey) {
+  if (!dateKey) return '';
+  const m = String(dateKey).match(/^(\d{2})([A-Z]{3})(\d{2})$/);
+  if (!m) return '';
+  const year = 2000 + Number(m[3]);
+  const month = MONTHS[m[2]];
+  if (month === undefined) return '';
+  return dateFor(Number(m[1]), month, year);
+}
+
+function crewDateKeyForFlight(crewMap, flight, preferredDateKey = '') {
+  // 1) Si la fecha actual ya tiene tripulación para ese vuelo, no tocar nada.
+  if (preferredDateKey && crewMap[`${preferredDateKey}-${flight}`]) return preferredDateKey;
+
+  // 2) Si el parser quedó corrido un día, usar la fecha informada en "Tripulación del vuelo".
+  const suffix = `-${flight}`;
+  const matches = Object.keys(crewMap)
+    .filter(k => k.endsWith(suffix))
+    .map(k => k.slice(0, -suffix.length));
+
+  if (!matches.length) return '';
+  if (matches.length === 1) return matches[0];
+
+  // 3) Si aparece más de una vez en el roster, elegir la más cercana a la fecha actual.
+  const preferredDateStr = dateFromCrewKey(preferredDateKey);
+  if (preferredDateStr) {
+    const base = new Date(`${preferredDateStr}T00:00:00`).getTime();
+    matches.sort((a, b) => {
+      const da = Math.abs(new Date(`${dateFromCrewKey(a)}T00:00:00`).getTime() - base);
+      const db = Math.abs(new Date(`${dateFromCrewKey(b)}T00:00:00`).getTime() - base);
+      return da - db;
+    });
+  }
+  return matches[0];
+}
+
 function classifyActivity(code) {
   const map = {
     '*': { title: 'Día OFF', type: 'off' },
@@ -354,7 +391,7 @@ function parseRoster(text, filePath = '') {
       // Fix real: para vuelos, la fecha de la sección Tripulación del vuelo es la fuente
       // más confiable cuando PDF.js extrae la fecha corrida o fuera de orden.
       // Ej.: AR1824 aparece visualmente 24WED y tripu 24JUN.26; nunca debe quedar 23/6.
-      const crewKey = crewDateKeyForFlight(crewMap, first.flight);
+      const crewKey = crewDateKeyForFlight(crewMap, first.flight, current.dateKey);
       const crewDateStr = dateFromCrewKey(crewKey);
       const dateStr = crewDateStr || current.dateStr;
       const dateKey = crewKey || current.dateKey;
