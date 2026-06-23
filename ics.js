@@ -111,9 +111,8 @@ function buildICS(events) {
 
 
 function toLocalICS(iso) {
-  return String(iso || '')
-    .replace(/[-:]/g, '')
-    .slice(0, 15);
+  // Keep local roster time. Example: 2026-07-07T09:05 -> 20260707T090500
+  return String(iso || '').replace(/[-:]/g, '').slice(0, 15);
 }
 
 function buildICSAndroid(events) {

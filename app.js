@@ -164,12 +164,10 @@ function openICSForCalendar(filename = 'roster-calendar-pro.ics', text = icsText
 }
 
 $('addAppleBtn').addEventListener('click', () => {
-  // Apple/iPhone usa SIEMPRE el ICS original, el que ya funcionaba bien.
   openICSForCalendar('roster-apple-calendar.ics', icsText);
 });
 
 $('addAndroidBtn').addEventListener('click', () => {
-  // Android/Samsung usa ICS separado con TZ Argentina.
   openICSForCalendar('roster-android-calendar.ics', icsTextAndroid);
 });
 

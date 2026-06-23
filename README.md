@@ -47,35 +47,10 @@ En iPhone/Android usa Web Share API cuando está disponible. Si no, abre/descarg
 Agrega ícono propio y manifest para iPhone/Android.
 
 
-## v2.2 Android TZ fix
+## v2.4 clean
 
-- Apple Calendar usa el ICS original.
-- Android / Google Calendar usa ICS con:
-  DTSTART;TZID=America/Argentina/Buenos_Aires
-  DTEND;TZID=America/Argentina/Buenos_Aires
-- Esto evita corrimientos por interpretación UTC/Z en Samsung/Google Calendar.
-
-
-## v2.3 Crew fix
-
-- Parser de tripulación más tolerante:
-  - 08JUL.26
-  - 08JUL26
-  - 08 JUL.26
-  - 08 JUL 26
-- Corrige vuelos que salían como "tripulación no informada" cuando la web separaba la fecha.
-- Mantiene Android TZ fix.
-
-
-## v2.3.1 Apple fix
-
-- Botón Apple Calendar vuelve a usar exclusivamente buildICS original.
-- Botón Descargar ICS también usa buildICS original.
-- Botón Android usa buildICSAndroid separado con TZ Argentina.
-
-
-## v2.3.2 Process PDF fix
-
-- Corrige app.js: elimina bloque duplicado que rompía el JavaScript.
-- El botón Procesar PDF vuelve a funcionar.
-- Mantiene Apple original + Android TZ + crew parser fix.
+Base limpia desde v2.1 PWA.
+- Apple/iPhone usa buildICS original.
+- Android usa buildICSAndroid con TZ America/Argentina/Buenos_Aires.
+- Parser crew más tolerante.
+- Botón Procesar PDF verificado.
