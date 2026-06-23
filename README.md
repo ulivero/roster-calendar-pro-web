@@ -45,9 +45,3 @@ En iPhone/Android usa Web Share API cuando está disponible. Si no, abre/descarg
 
 ## v2.1 PWA
 Agrega ícono propio y manifest para iPhone/Android.
-
-
-## v2.6 token parser fix
-- Parser nuevo por tokens para no correr fechas ni partir duties.
-- Mantiene ICS Apple original.
-- Android desactivado temporalmente.
