@@ -45,3 +45,11 @@ En iPhone/Android usa Web Share API cuando está disponible. Si no, abre/descarg
 
 ## v2.1 PWA
 Agrega ícono propio y manifest para iPhone/Android.
+
+
+## v2.7 line parser date fix
+
+- Parser por líneas para respetar fecha real de cada duty.
+- Corrige bug donde el primer tramo del duty caía el día anterior.
+- Cache busting en parser/app/ics.
+- Android desactivado temporalmente.
