@@ -539,6 +539,67 @@ function parseRoster(text, filePath = '') {
 
   flushDuty();
 
+  // v7.2: reconstruir actividades desde las fechas impresas del roster.
+  // Los vuelos pueden corregirse con la fecha de Tripulación del vuelo, pero
+  // A/T, OFF (*), GUA, VAC, D/L, CRM, ESM, etc. SIEMPRE deben quedar en la fecha
+  // de su propio renglón (ej.: 23TUE A/T, 25THU *, 28SUN GUA).
+  // Esto evita que una corrección de vuelos arrastre actividades al día incorrecto.
+  function buildAuthoritativeActivities() {
+    const out = [];
+    let aYear = baseYear;
+    let aMonth = monthFromHeader(text);
+    if (aMonth === null) aMonth = new Date().getMonth();
+    let aLastDay = null;
+    let aDateStr = '';
+
+    function setAuthDay(day) {
+      if (aLastDay !== null && day < aLastDay) {
+        aMonth += 1;
+        if (aMonth > 11) { aMonth = 0; aYear += 1; }
+      }
+      aLastDay = day;
+      aDateStr = dateFor(day, aMonth, aYear);
+    }
+
+    for (const raw of lines) {
+      const compact = raw.replace(/\s+/g, '');
+      const dayOnly = compact.match(new RegExp(`^(\\d{2})${DOW_RE}$`));
+      if (dayOnly) {
+        setAuthDay(Number(dayOnly[1]));
+        continue;
+      }
+
+      let line = raw;
+      const inline = compact.match(new RegExp(`^(\\d{2})${DOW_RE}(.+)$`));
+      if (inline) {
+        setAuthDay(Number(inline[1]));
+        line = inline[3];
+      }
+
+      if (!aDateStr) continue;
+      const act = parseActivityLine(line);
+      if (!act) continue;
+
+      const cls = classifyActivity(act.code);
+      const startMinutes = timeToMinutes(act.start === '24:00' ? '00:00' : act.start);
+      out.push({
+        id: `${aDateStr}-${act.code.replace(/\W/g, '') || 'OFF'}`,
+        type: cls.type,
+        title: `${activityIcon(cls.type)} ${cls.title}`,
+        start: fullDateTime(aDateStr, act.start),
+        end: fullDateTime(aDateStr, act.end, startMinutes),
+        location: act.location,
+        description: `Actividad: ${cls.title}\nCódigo: ${act.code}\nLínea original: ${act.raw}`
+      });
+    }
+    return out;
+  }
+
+  const authoritativeActivities = buildAuthoritativeActivities();
+  const flightReportEvents = events.filter(ev => ev.dutyId || ev.type === 'flight' || ev.type === 'report' || ev.type === 'debrief');
+  events.length = 0;
+  events.push(...flightReportEvents, ...authoritativeActivities);
+
   // Quitar duplicados exactos por seguridad.
   const unique = [];
   const seen = new Set();
@@ -579,7 +640,7 @@ function parseRoster(text, filePath = '') {
       if (sameDate && prevDest && currOrig && prevDest === currOrig && gapMin >= -60 && gapMin <= 180) {
         dutyAlias.set(flight.dutyId, previousFlight.dutyId);
         for (const ev of events) {
-          if (ev.dutyId === flight.dutyId && ev.type === 'report') reportsToRemove.add(ev.id);
+          if (ev.dutyId === flight.dutyId && ev.type === 'report') { reportsToRemove.add(ev.id); ev._removeReport = true; }
         }
       }
     }
@@ -605,7 +666,7 @@ function parseRoster(text, filePath = '') {
     }
   }
 
-  const noDuplicateReports = events.filter(ev => !(ev.type === 'report' && reportsToRemove.has(ev.id)));
+  const noDuplicateReports = events.filter(ev => !(ev.type === 'report' && (reportsToRemove.has(ev.id) || ev._removeReport)));
   events.length = 0;
   events.push(...noDuplicateReports);
 
@@ -658,7 +719,7 @@ function parseRoster(text, filePath = '') {
     }
   }
 
-  debug.push('Parser: v7.1 crew-date + no-activity-shift + merge-split-duty');
+  debug.push('Parser: v7.2 authoritative-activities + crew-date + merge-report-fix');
   debug.push(`Líneas normalizadas: ${lines.length}`);
   debug.push(`Eventos detectados: ${events.length}`);
   if (events.length === 0) debug.push('No se detectaron eventos. Revisar el texto crudo en la vista Debug.');
