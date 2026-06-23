@@ -47,9 +47,7 @@ En iPhone/Android usa Web Share API cuando está disponible. Si no, abre/descarg
 Agrega ícono propio y manifest para iPhone/Android.
 
 
-## v2.5 Apple restore
-
-- Base restaurada desde v2.1 PWA, que funcionaba bien en Apple.
-- No modifica el generador ICS original.
-- Corrige parser de tripulación.
-- Android desactivado temporalmente para evitar fechas corridas.
+## v2.6 token parser fix
+- Parser nuevo por tokens para no correr fechas ni partir duties.
+- Mantiene ICS Apple original.
+- Android desactivado temporalmente.
