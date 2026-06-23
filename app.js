@@ -7,8 +7,18 @@ const $ = id => document.getElementById(id);
 
 function fmtDate(iso) {
   if (!iso) return '';
-  const d = new Date(iso);
-  return d.toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' });
+  // Mostrar la fecha/hora exactamente como viene del roster, sin que el navegador
+  // la convierta por zona horaria. Esto evita OFF/vuelos corridos un día.
+  const m = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  if (!m) return iso;
+  const yy = m[1].slice(2);
+  const dd = Number(m[3]);
+  const mm = Number(m[2]);
+  const hh = Number(m[4]);
+  const mi = m[5];
+  const ampm = hh >= 12 ? 'p. m.' : 'a. m.';
+  const h12 = hh % 12 || 12;
+  return `${dd}/${mm}/${yy}, ${h12}:${mi} ${ampm}`;
 }
 
 async function extractPdfText(file) {
@@ -65,7 +75,7 @@ function renderEvents(events) {
   for (const ev of events) {
     const div = document.createElement('div');
     div.className = 'event';
-    const desc = (ev.description || '').split('\n').slice(0, 16).join('\n');
+    const desc = (ev.description || '');
     div.innerHTML = `
       <h3>${escapeHtml(ev.title || '')}</h3>
       <div class="meta">${escapeHtml(fmtDate(ev.start))} → ${escapeHtml(fmtDate(ev.end))}
