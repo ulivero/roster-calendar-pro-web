@@ -426,7 +426,7 @@ function parseRoster(text, filePath = '') {
         dutyId,
         title: `🛬 LAST LANDING ${last.sta}`,
         start: fullDateTime(dateStr, last.sta, timeToMinutes(last.std)),
-        end: addMinutesIso(fullDateTime(dateStr, last.sta, timeToMinutes(last.std)), 5),
+        end: addMinutesIso(fullDateTime(dateStr, last.sta, timeToMinutes(last.std)), 30),
         dutyStart,
         dutyEnd,
         location: last.dest,
