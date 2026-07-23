@@ -1,12 +1,19 @@
 function pad2(n) { return String(n).padStart(2, '0'); }
 
+
+function normalizeSpanishMonths(text){
+  return text
+    .replace(/ENE/g,'JAN').replace(/ABR/g,'APR').replace(/AGO/g,'AUG')
+    .replace(/DIC/g,'DEC').replace(/SET/g,'SEP');
+}
+
 const MONTHS = {
   JAN: 0, FEB: 1, MAR: 2, APR: 3, MAY: 4, JUN: 5,
   JUL: 6, AUG: 7, SEP: 8, OCT: 9, NOV: 10, DEC: 11
 };
 const MONTH_NAMES = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
 const DOW_RE = '(MON|TUE|WED|THU|FRI|SAT|SUN)';
-const ACTIVITY_RE = /^(A\/T|D\/L|GUA|GAB|MED|NPR|RAC|VAC|CRM|ESM|\*)(.*)$/;
+const ACTIVITY_RE = /^(A\/T|D\/L|GUA|GAB|MED|NPR|RAC|VAC|CRM|ESM|REM|ELR|\*)(.*)$/;
 
 function parseHeaderYear(text) {
   const m = text.match(/(\d{2})([A-Z]{3})(\d{2})\s*-\s*(\d{2})([A-Z]{3})(\d{2})/);
@@ -116,7 +123,9 @@ function classifyActivity(code) {
     'RAC': { title: 'RAAC Parte 120', type: 'ground' },
     'VAC': { title: 'Vacaciones', type: 'vacation' },
     'CRM': { title: 'Curso CRM Mañana', type: 'ground' },
-    'ESM': { title: 'ESSYS Mañana', type: 'ground' }
+    'ESM': { title: 'ESSYS Mañana', type: 'ground' },
+    'REM': { title: 'REM', type: 'ground' },
+    'ELR': { title: 'ELR', type: 'ground' }
   };
   return map[code] || { title: code, type: 'other' };
 }
@@ -312,7 +321,7 @@ function parseRoster(text, filePath = '') {
     if (idx !== -1) scheduleText = scheduleText.slice(0, idx);
   }
 
-  const normalized = normalizeRosterText(scheduleText);
+  const normalized = normalizeSpanishMonths(normalizeRosterText(scheduleText));
   const lines = normalized.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
 
   let currentDay = null;
@@ -426,7 +435,7 @@ function parseRoster(text, filePath = '') {
         dutyId,
         title: `🛬 LAST LANDING ${last.sta}`,
         start: fullDateTime(dateStr, last.sta, timeToMinutes(last.std)),
-        end: addMinutesIso(fullDateTime(dateStr, last.sta, timeToMinutes(last.std)), 5),
+        end: addMinutesIso(fullDateTime(dateStr, last.sta, timeToMinutes(last.std)), 30),
         dutyStart,
         dutyEnd,
         location: last.dest,
