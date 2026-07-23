@@ -6,7 +6,16 @@ const MONTHS = {
 };
 const MONTH_NAMES = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
 const DOW_RE = '(MON|TUE|WED|THU|FRI|SAT|SUN)';
-const ACTIVITY_RE = /^(A\/T|D\/L|GUA|GAB|MED|NPR|RAC|VAC|CRM|ESM|\*)(.*)$/;
+function normalizeSpanishMonths(text) {
+  return String(text||'')
+    .replace(/ENE/g,'JAN')
+    .replace(/ABR/g,'APR')
+    .replace(/AGO/g,'AUG')
+    .replace(/SET/g,'SEP')
+    .replace(/DIC/g,'DEC');
+}
+
+const ACTIVITY_RE = /^(A\/T|D\/L|GUA|GAB|MED|NPR|RAC|VAC|CRM|ESM|REM|ELR|\*)(.*)$/;
 
 function parseHeaderYear(text) {
   const m = text.match(/(\d{2})([A-Z]{3})(\d{2})\s*-\s*(\d{2})([A-Z]{3})(\d{2})/);
@@ -116,7 +125,9 @@ function classifyActivity(code) {
     'RAC': { title: 'RAAC Parte 120', type: 'ground' },
     'VAC': { title: 'Vacaciones', type: 'vacation' },
     'CRM': { title: 'Curso CRM Mañana', type: 'ground' },
-    'ESM': { title: 'ESSYS Mañana', type: 'ground' }
+    'ESM': { title: 'ESSYS Mañana', type: 'ground' },
+    'REM': { title: 'REM', type: 'ground' },
+    'ELR': { title: 'ELR', type: 'ground' }
   };
   return map[code] || { title: code, type: 'other' };
 }
